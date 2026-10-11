@@ -1,28 +1,150 @@
-/* Layout: één smalle leeskolom, rustig en praktisch, zoals een goede handleiding */
-:root{--bg:#f6f7f4;--fg:#1f2a26;--muted:#5b6a63;--line:#d5dcd6;--accent:#2f6f5e;--card:#ffffff;--serif:"Source Serif 4",Georgia,serif;--sans:"Inter Tight",system-ui,sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#141a18;--fg:#e6ece8;--muted:#9aaba3;--line:#2c3733;--accent:#7cc4ad;--card:#1b2320;color-scheme:dark}}
+/* vvekit.nl: warm, rustig en betrouwbaar. Smalle leeskolom voor uitleg, brede secties op de beginpagina. */
+:root{
+  --bg:#f7f5ef;--bg2:#eef3ee;--fg:#1d2925;--muted:#56665f;--line:#dde3dc;
+  --accent:#1f6b57;--accent-2:#2f8f74;--accent-soft:#dcefe6;--warm:#f2b84b;--warm-soft:#fdf1d8;
+  --card:#ffffff;--shadow:0 1px 2px rgba(20,40,30,.06),0 8px 24px rgba(20,40,30,.08);
+  --serif:"Source Serif 4",Georgia,serif;--sans:"Inter Tight",system-ui,sans-serif;--r:14px
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121816;--bg2:#17201d;--fg:#e6ece8;--muted:#9fb0a8;--line:#2a3531;
+  --accent:#7fd0b4;--accent-2:#5fb89b;--accent-soft:#1d3a31;--warm:#f2b84b;--warm-soft:#3a2f18;
+  --card:#1a2320;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.3);color-scheme:dark}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 var(--sans)}
-.wrap{max-width:44rem;margin:0 auto;padding-inline:16px;padding-block:24px 48px}
-header.site{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:28px}
-header.site a.logo{font:600 1.25rem var(--serif);color:var(--fg);text-decoration:none}
-nav{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.95rem}
-a{color:var(--accent)}
-h1,h2,h3{font-family:var(--serif);line-height:1.25;text-wrap:balance}
-h1{font-size:2rem;margin:.2em 0 .4em}
-h2{font-size:1.35rem;margin-top:1.8em}
-.lead{font-size:1.1rem;color:var(--muted)}
-.box{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px 18px;margin:24px 0}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 var(--sans);-webkit-text-size-adjust:100%}
+img{max-width:100%}
+a{color:var(--accent);text-underline-offset:2px}
+
+/* Kopbalk */
+header.site{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+header.site .bar{max-width:68rem;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:8px 24px;flex-wrap:wrap;justify-content:space-between}
+a.logo{display:flex;align-items:center;gap:8px;font:700 1.2rem var(--serif);color:var(--fg);text-decoration:none}
+a.logo svg{width:28px;height:28px;flex:none}
+nav{display:flex;gap:4px;font-size:.93rem;overflow-x:auto;scrollbar-width:none;max-width:100%}
+nav::-webkit-scrollbar{display:none}
+nav a{color:var(--fg);text-decoration:none;padding:6px 10px;border-radius:999px;white-space:nowrap}
+nav a:hover{background:var(--accent-soft)}
+nav a[aria-current=page]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+/* Leeskolom */
+.wrap{max-width:44rem;margin:0 auto;padding:28px 16px 48px}
+.wide{max-width:68rem;margin:0 auto;padding-inline:16px}
+h1,h2,h3{font-family:var(--serif);line-height:1.2;text-wrap:balance}
+h1{font-size:clamp(1.9rem,4.5vw,2.6rem);margin:.2em 0 .4em;letter-spacing:-.01em}
+h2{font-size:1.4rem;margin-top:1.8em}
+.lead{font-size:1.12rem;color:var(--muted)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;margin:24px 0;box-shadow:var(--shadow)}
 .box h3{margin-top:0}
-.btn{display:inline-block;background:var(--accent);color:var(--bg);padding:10px 16px;border-radius:4px;text-decoration:none;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:11px 18px;border-radius:999px;text-decoration:none;font-weight:600;border:0;font:600 1rem var(--sans);cursor:pointer;transition:transform .15s,background .15s}
+@media (prefers-color-scheme:dark){.btn{color:#0f1a16}}
+.btn:hover{background:var(--accent-2);transform:translateY(-1px)}
+.btn.ghost{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.btn.ghost:hover{background:var(--accent-soft)}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
 .tw{overflow-x:auto}
 ul.check{list-style:none;padding-left:0}
 ul.check li{padding-left:1.6em;position:relative;margin:.35em 0}
 ul.check li::before{content:"☐";position:absolute;left:0;color:var(--accent)}
-footer{margin-top:48px;border-top:1px solid var(--line);padding-top:16px;font-size:.88rem;color:var(--muted)}
 figure.shot{margin:12px 0 24px}
-figure.shot img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:4px;background:#fff}
-figure.shot figcaption{font-size:.85rem;color:var(--muted);margin-top:4px}
-pre.voorbeeld{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px;font-size:.9rem;line-height:1.5}
+figure.shot img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:var(--shadow)}
+figure.shot figcaption{font-size:.85rem;color:var(--muted);margin-top:6px}
+pre.voorbeeld{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;font-size:.9rem;line-height:1.5}
+
+/* Voettekst */
+footer.site{border-top:1px solid var(--line);background:var(--bg2);font-size:.88rem;color:var(--muted)}
+footer.site .in{max-width:44rem;margin:0 auto;padding:24px 16px 96px}
+
+/* Beginpagina */
+.hero{background:radial-gradient(1200px 400px at 85% -10%,var(--accent-soft),transparent 70%),radial-gradient(800px 300px at -10% 110%,var(--warm-soft),transparent 70%);border-bottom:1px solid var(--line)}
+.hero .wide{display:grid;grid-template-columns:1.15fr .85fr;gap:40px;align-items:center;padding-block:48px 56px}
+.hero h1{font-size:clamp(2.1rem,5vw,3.1rem);margin-top:0}
+.hero .lead{font-size:1.18rem;max-width:34rem}
+.hero .acties{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.pill{display:inline-block;font-size:.8rem;font-weight:600;letter-spacing:.02em;color:var(--accent);background:var(--accent-soft);padding:4px 10px;border-radius:999px}
+.vertrouwen{display:flex;flex-wrap:wrap;gap:6px 18px;margin:22px 0 0;padding:0;list-style:none;font-size:.9rem;color:var(--muted)}
+.vertrouwen li::before{content:"✓ ";color:var(--accent);font-weight:700}
+
+.vera-kaart{background:var(--card);border-radius:20px;box-shadow:var(--shadow);border:1px solid var(--line);padding:20px}
+.vera-kop{display:flex;gap:12px;align-items:center}
+.vera-kop img{width:56px;height:56px;border-radius:50%;flex:none}
+.vera-kop strong{display:block;font-size:1.05rem}
+.vera-kop span{font-size:.85rem;color:var(--muted)}
+.ai-label{display:inline-block;font-size:.7rem;font-weight:700;background:var(--warm);color:#3a2a00;border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:2px}
+.bubbel{background:var(--bg2);border-radius:4px 16px 16px 16px;padding:12px 14px;margin:14px 0;font-size:.95rem}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:7px 12px;font:500 .88rem var(--sans);cursor:pointer;text-align:left}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.vera-invoer{display:flex;gap:8px;margin-top:14px}
+.vera-invoer input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:11px 14px;font:16px var(--sans)}
+.vera-invoer input:focus{outline:2px solid var(--accent);outline-offset:1px}
+
+section.blok{padding-block:56px}
+section.blok.alt{background:var(--bg2);border-block:1px solid var(--line)}
+section.blok h2{margin-top:0;font-size:clamp(1.5rem,3vw,1.9rem)}
+.sub{color:var(--muted);max-width:40rem;margin-top:-.4em}
+.producten{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:28px}
+.product{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;box-shadow:var(--shadow);display:flex;flex-direction:column;position:relative;overflow:hidden}
+.product::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:var(--accent)}
+.product.warm::before{background:var(--warm)}
+.product .pill{align-self:flex-start}
+.product h3{margin:.3em 0 .2em;font-size:1.4rem}
+.product .prijs{font:700 2rem var(--serif);margin:.2em 0}
+.product .prijs small{font:500 .9rem var(--sans);color:var(--muted)}
+.product ul{padding-left:0;list-style:none;margin:.6em 0 1.2em}
+.product li{padding-left:1.5em;position:relative;margin:.3em 0}
+.product li::before{content:"✓";position:absolute;left:0;color:var(--accent);font-weight:700}
+.product .acties{margin-top:auto;display:flex;gap:10px;flex-wrap:wrap}
+.voor-wie{font-size:.92rem;color:var(--muted)}
+.gidsen{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+.gids{display:block;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;text-decoration:none;color:var(--fg);transition:transform .15s,box-shadow .15s}
+.gids:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.gids .ico{font-size:1.5rem}
+.gids strong{display:block;font-family:var(--serif);font-size:1.12rem;margin:.3em 0 .2em}
+.gids span{font-size:.92rem;color:var(--muted)}
+.stappen{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;counter-reset:s;margin-top:24px}
+.stap{counter-increment:s;padding-top:6px}
+.stap::before{content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;margin-bottom:8px}
+@media (prefers-color-scheme:dark){.stap::before{color:#0f1a16}}
+.stap strong{display:block}
+.stap span{font-size:.93rem;color:var(--muted)}
+.eerlijk{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
+.eerlijk img{width:64px;height:64px;border-radius:50%}
+@media (max-width:820px){
+  .hero .wide{grid-template-columns:minmax(0,1fr);gap:28px;padding-block:32px 40px}
+  .producten,.gidsen{grid-template-columns:minmax(0,1fr)}
+  .stappen{grid-template-columns:1fr 1fr}
+}
+@media (max-width:480px){.stappen{grid-template-columns:1fr}}
+
+/* Vera: chatvenster op elke pagina */
+.vera-knop{position:fixed;right:16px;bottom:16px;z-index:40;display:flex;align-items:center;gap:10px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:6px 16px 6px 6px;box-shadow:0 6px 28px rgba(0,0,0,.18);font:600 .95rem var(--sans);cursor:pointer}
+.vera-knop img{width:40px;height:40px;border-radius:50%}
+.vera-knop:hover{border-color:var(--accent)}
+.vera-paneel{position:fixed;right:16px;bottom:16px;z-index:50;width:min(400px,calc(100vw - 32px));height:min(600px,calc(100dvh - 32px));background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden}
+.vera-paneel[hidden],.vera-knop[hidden]{display:none}
+.vera-paneel header{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 14px;background:var(--accent);color:#fff}
+@media (prefers-color-scheme:dark){.vera-paneel header{background:#1d3a31;color:var(--fg)}}
+.vera-paneel header img{width:40px;height:40px;border-radius:50%;border:2px solid rgba(255,255,255,.6)}
+.vera-paneel header div{flex:1;line-height:1.25}
+.vera-paneel header small{display:block;opacity:.85;font-size:.78rem}
+.vera-sluit{background:transparent;border:0;color:inherit;font-size:1.6rem;line-height:1;cursor:pointer;padding:4px 8px;border-radius:8px}
+.vera-sluit:hover{background:rgba(255,255,255,.15)}
+.vera-log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;font-size:.95rem;overscroll-behavior:contain}
+.msg{max-width:88%;padding:10px 13px;border-radius:16px;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere}
+.msg.vera{background:var(--bg2);border-top-left-radius:4px;align-self:flex-start}
+.msg.ik{background:var(--accent);color:#fff;border-top-right-radius:4px;align-self:flex-end}
+@media (prefers-color-scheme:dark){.msg.ik{color:#0f1a16}}
+.msg.denkt{color:var(--muted);font-style:italic}
+.vera-log .chips{margin-top:2px}
+.vera-paneel form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.vera-paneel input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:10px 14px;font:16px var(--sans)}
+.vera-paneel form button{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:0 16px;font:600 .95rem var(--sans);cursor:pointer}
+@media (prefers-color-scheme:dark){.vera-paneel form button{color:#0f1a16}}
+.vera-voet{font-size:.72rem;color:var(--muted);padding:0 14px 10px;text-align:center}
+@media (max-width:480px){
+  .vera-paneel{right:0;bottom:0;width:100vw;height:100dvh;border-radius:0}
+  .vera-knop span{display:none}
+  .vera-knop{padding:6px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}

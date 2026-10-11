@@ -1,0 +1,14 @@
+# Cloudflare Worker voor Vera, de AI-assistent op vvekit.nl.
+# De API-sleutel staat NIET hier: die zet u in het Cloudflare-dashboard als secret ANTHROPIC_API_KEY.
+name = "vvekit-assistent"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Welk Claude-model Vera gebruikt. Goedkoper: "claude-haiku-5-5".
+MODEL = "claude-opus-5-5"
+# Hoe diep het model nadenkt: low | medium | high. "low" is snel en zuinig.
+EFFORT = "low"
+# Alleen deze websites mogen Vera aanroepen.
+ALLOWED_ORIGINS = "https://vvekit.nl,https://www.vvekit.nl"

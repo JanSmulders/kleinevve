@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Getekende avatar van Vera, de AI-assistent">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f8f74"/><stop offset="1" stop-color="#1b5a49"/></linearGradient>
+    <clipPath id="c"><circle cx="60" cy="60" r="60"/></clipPath>
+  </defs>
+  <g clip-path="url(#c)">
+    <rect width="120" height="120" fill="url(#bg)"/>
+    <circle cx="96" cy="22" r="30" fill="#ffffff" opacity=".08"/>
+    <path d="M18 124c2-24 20-36 42-36s40 12 42 36z" fill="#f2b84b"/>
+    <path d="M48 88h24l-2 10c-3 4-17 4-20 0z" fill="#e9b28f"/>
+    <path d="M32 58c0-22 12-34 28-34s28 12 28 34c0 10-2 18-4 22l-6-24H42l-6 24c-2-4-4-12-4-22z" fill="#3b2a24"/>
+    <ellipse cx="60" cy="58" rx="20" ry="23" fill="#f4c7a6"/>
+    <path d="M38 52c4-14 14-20 24-20 9 0 17 6 20 18-10-2-22-6-28-12-4 6-9 11-16 14z" fill="#3b2a24"/>
+    <circle cx="52" cy="59" r="2.6" fill="#2a1f1b"/>
+    <circle cx="68" cy="59" r="2.6" fill="#2a1f1b"/>
+    <path d="M52 69c4 4 12 4 16 0" stroke="#b5654e" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    <circle cx="47" cy="66" r="3.5" fill="#f19a8b" opacity=".45"/>
+    <circle cx="73" cy="66" r="3.5" fill="#f19a8b" opacity=".45"/>
+  </g>
+</svg>
