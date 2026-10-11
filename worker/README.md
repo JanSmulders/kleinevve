@@ -9,7 +9,7 @@ Deze map is een Cloudflare Worker. De website (`assistent.js`) stuurt vragen hie
 4. Zet het Worker-adres (`https://vvekit-assistent.<naam>.workers.dev`) in `assistent.js` bij `VERA_API`.
 
 ## Instellingen in `wrangler.toml`
-- `MODEL`: welk Claude-model (`claude-opus-5-5`, of goedkoper `claude-haiku-5-5`).
+- `MODEL`: welk Claude-model (`claude-haiku-5-5`, of slimmer maar duurder `claude-opus-5-5`).
 - `EFFORT`: `low` houdt antwoorden snel en zuinig.
 - `ALLOWED_ORIGINS`: alleen vvekit.nl mag de Worker gebruiken.
 

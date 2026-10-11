@@ -6,8 +6,8 @@ compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-# Welk Claude-model Vera gebruikt. Goedkoper: "claude-haiku-5-5".
-MODEL = "claude-opus-5-5"
+# Welk Claude-model Vera gebruikt (keuze Jan 2026-10-11). Slimmer maar duurder: "claude-opus-5-5".
+MODEL = "claude-haiku-5-5"
 # Hoe diep het model nadenkt: low | medium | high. "low" is snel en zuinig.
 EFFORT = "low"
 # Alleen deze websites mogen Vera aanroepen.

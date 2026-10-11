@@ -115,7 +115,7 @@ export default {
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1 });
     try {
       const response = await client.messages.create({
-        model: env.MODEL || "claude-opus-5-5",
+        model: env.MODEL || "claude-haiku-5-5",
         max_tokens: 2000, // ruimte voor kort nadenken plus een antwoord van ~120 woorden
         output_config: { effort: env.EFFORT || "low" },
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
