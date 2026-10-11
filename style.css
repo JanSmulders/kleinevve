@@ -25,3 +25,4 @@ footer{margin-top:48px;border-top:1px solid var(--line);padding-top:16px;font-si
 figure.shot{margin:12px 0 24px}
 figure.shot img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:4px;background:#fff}
 figure.shot figcaption{font-size:.85rem;color:var(--muted);margin-top:4px}
+pre.voorbeeld{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px;font-size:.9rem;line-height:1.5}
