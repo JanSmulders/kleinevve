@@ -1,6 +1,6 @@
 # Cloudflare Worker voor Vera, de AI-assistent op vvekit.nl.
 # De API-sleutel staat NIET hier: die zet u in het Cloudflare-dashboard als secret ANTHROPIC_API_KEY.
-name = "vvekit-assistent"
+name = "kleinevve"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
