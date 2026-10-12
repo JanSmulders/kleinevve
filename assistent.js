@@ -13,7 +13,7 @@ if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
 }
 
 (() => {
-  const AVATAR = "img/vera.svg";
+  const AVATAR = "/img/vera.svg";
   const GROET = "Hallo, ik ben Vera, de AI-assistent van vvekit.nl. Ik help met vragen over kleine VvE's: reservefonds, voorschotten, de ledenvergadering en wat een VvE moet regelen. Waar kan ik mee helpen?";
   const SUGGESTIES = [
     "Hoeveel moeten we reserveren?",
@@ -57,7 +57,7 @@ if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, url) => {
         const ok = /^[a-z0-9-]+\.html(#[a-z0-9-]+)?$/i.test(url) || /^https:\/\/vvekit\.gumroad\.com\/l\/[A-Za-z0-9]+$/.test(url) || /^https:\/\/(www\.)?vvekit\.nl\//.test(url);
-        return ok ? `<a href="${url}">${t}</a>` : t;
+        return ok ? `<a href="${/^[a-z0-9-]+\.html/i.test(url) ? "/" + url : url}">${t}</a>` : t;
       })
       .replace(/alv@vvekit\.nl/g, '<a href="mailto:alv@vvekit.nl">alv@vvekit.nl</a>');
   }
