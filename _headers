@@ -1,0 +1,4 @@
+# Alleen Cloudflare Pages leest dit bestand (de testomgeving test.vvekit.nl).
+# GitHub Pages (vvekit.nl) negeert het. Zo komt de testsite niet in Google.
+/*
+  X-Robots-Tag: noindex, nofollow

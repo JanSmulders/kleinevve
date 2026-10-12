@@ -3,6 +3,15 @@
 // Staat er het adres van de Cloudflare Worker, dan antwoordt Claude, met de vaste antwoorden als reserve.
 const VERA_API = "https://kleinevve.jansmulders1966.workers.dev";
 
+// Testomgeving (test.vvekit.nl of een Cloudflare-voorbeeld): duidelijke balk bovenaan.
+if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
+  const b = document.createElement("div");
+  b.textContent = "TESTOMGEVING · niet de echte site · ga naar vvekit.nl";
+  b.style.cssText = "background:#f2b84b;color:#3a2a00;text-align:center;font:600 14px system-ui,sans-serif;padding:6px 12px";
+  b.onclick = () => { location.href = "https://vvekit.nl" + location.pathname; };
+  document.body.prepend(b);
+}
+
 (() => {
   const AVATAR = "img/vera.svg";
   const GROET = "Hallo, ik ben Vera, de AI-assistent van vvekit.nl. Ik help met vragen over kleine VvE's: reservefonds, voorschotten, de ledenvergadering en wat een VvE moet regelen. Waar kan ik mee helpen?";
