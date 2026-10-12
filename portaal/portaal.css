@@ -1,0 +1,25 @@
+/* Formulieren en extra's voor het echte portaal (bovenop /style.css en /demo/demo.css) */
+.wie{font-size:.85rem;color:var(--muted);display:flex;gap:10px;align-items:center}
+.wie button{background:none;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font:500 .82rem var(--sans);color:var(--fg);cursor:pointer}
+.inlog{max-width:26rem;margin:40px auto}
+.formulier{display:grid;gap:10px;margin-top:12px}
+.formulier.rij{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));align-items:end}
+.formulier label{display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
+.formulier input,.formulier select,.formulier textarea,select.post{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:8px;padding:9px 11px;font:16px var(--sans);width:100%}
+.formulier textarea{min-height:140px}
+select.post{padding:4px 6px;font-size:.88rem;width:auto;max-width:12rem}
+.melding{background:var(--accent-soft);border-radius:10px;padding:10px 14px;margin:12px 0;font-size:.93rem}
+.melding.fout{background:#fde8e6;color:#8a1f12}
+@media (prefers-color-scheme:dark){.melding.fout{background:#3a1d19;color:#ffb4a8}}
+.klein-knop{background:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font:500 .8rem var(--sans);color:var(--muted);cursor:pointer}
+.klein-knop:hover{border-color:#b42318;color:#b42318}
+.punten{list-style:none;padding:0;margin:0}
+.punten li{padding:9px 0 9px 26px;border-bottom:1px solid var(--line);position:relative;font-size:.93rem}
+.punten li:last-child{border-bottom:0}
+.punten li::before{content:"●";position:absolute;left:4px;color:var(--accent)}
+.punten li.let::before{color:#d97706}
+.punten li.ok::before{content:"✓"}
+details.blok{margin-top:16px}
+details.blok summary{cursor:pointer;font-weight:600;color:var(--accent)}
+.voorbeeld-csv{font-size:.85rem}
+.vve-kies{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
