@@ -284,7 +284,8 @@ const opmaak = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
 function stukken() {
   const kb = (n) => n > 1048576 ? (n / 1048576).toLocaleString("nl-NL", { maximumFractionDigits: 1 }) + " MB" : Math.round(n / 1024) + " kB";
-  const gekozen = S.veraStuk && S.stukken.some((x) => x.pad === S.veraStuk) ? S.veraStuk : S.stukken[0]?.pad;
+  const meer = S.stukken.length > 1; // "*" = Vera leest alle stukken tegelijk
+  const gekozen = S.veraStuk && (S.veraStuk === "*" ? meer : S.stukken.some((x) => x.pad === S.veraStuk)) ? S.veraStuk : meer ? "*" : S.stukken[0]?.pad;
   const log = S.vera[gekozen] || [];
   return `<div class="twee">
   <div class="kaart"><h2>Stukken van de VvE</h2>
@@ -295,11 +296,11 @@ function stukken() {
       <p style="font-size:.88rem;color:var(--muted)">Alleen PDF, tot 20 MB. Upload alleen stukken die alle leden mogen zien.</p>
       <input type="file" accept="application/pdf,.pdf" data-actie="stuk-upload"></details>` : ""}
   </div>
-  <div class="kaart"><h2>Vraag Vera over een stuk <span class="ai-label">AI</span></h2>
-    ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest het stuk en antwoordt met verwijzing naar het artikel. Controleer belangrijke antwoorden altijd in het stuk zelf. De tekst van het stuk gaat daarvoor naar Anthropic (de maker van Claude).</p>
-    <form class="formulier" data-form="vera-stuk"><label>Stuk<select name="pad">${S.stukken.map((f) => `<option value="${esc(f.pad)}"${f.pad === gekozen ? " selected" : ""}>${esc(f.naam)}</option>`).join("")}</select></label>
+  <div class="kaart"><h2>Vraag Vera over de stukken <span class="ai-label">AI</span></h2>
+    ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest de gekozen stukken en noemt in welk stuk en artikel het antwoord staat. Controleer belangrijke antwoorden altijd in het stuk zelf. De stukken gaan daarvoor naar Anthropic (de maker van Claude).</p>
+    <form class="formulier" data-form="vera-stuk"><label>Zoeken in<select name="pad" data-actie="vera-kies">${meer ? `<option value="*"${gekozen === "*" ? " selected" : ""}>${S.stukken.length > 10 ? "De nieuwste 10 stukken" : `Alle stukken (${S.stukken.length})`}</option>` : ""}${S.stukken.map((f) => `<option value="${esc(f.pad)}"${f.pad === gekozen ? " selected" : ""}>${esc(f.naam)}</option>`).join("")}</select></label>
     ${log.map((m) => `<div class="msg ${m.role === "user" ? "ik" : "vera"}" style="margin:0">${m.role === "user" ? esc(m.content) : opmaak(m.content)}</div>`).join("")}
-    ${S.veraBezig ? `<p style="color:var(--muted)">Vera leest het stuk…</p>` : ""}
+    ${S.veraBezig ? `<p style="color:var(--muted)">Vera leest ${gekozen === "*" ? "de stukken" : "het stuk"}…</p>` : ""}
     <label>Uw vraag<input name="vraag" required maxlength="600" placeholder="Bijv. wie betaalt onderhoud aan de slagboom?"></label><button class="btn" type="submit"${S.veraBezig ? " disabled" : ""}>Vraag</button></form>`
     : `<p style="color:var(--muted)">Upload eerst een stuk, bijvoorbeeld de splitsingsakte. Daarna kan Vera er vragen over beantwoorden.</p>`}
   </div></div>`;
@@ -442,7 +443,7 @@ app.addEventListener("submit", async (e) => {
       try {
         const { data: { session } } = await sb.auth.getSession(); // vers token, ook na een uur open laten staan
         const r = await fetch(VERA_API + "/stuk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
-          body: JSON.stringify({ pad, messages: log.slice(-8), vve: S.vve.naam, eenheid: eN() }) });
+          body: JSON.stringify({ ...(pad === "*" ? { paden: S.stukken.slice(0, 10).map((f) => f.pad) } : { pad }), messages: log.slice(-8), vve: S.vve.naam, eenheid: eN() }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.answer) throw new Error(j.error || "Vera kon geen antwoord geven.");
         log.push({ role: "assistant", content: j.answer });
@@ -572,6 +573,7 @@ document.addEventListener("click", async (e) => {
 
 app.addEventListener("change", (e) => {
   const t = e.target, a = t.dataset.actie;
+  if (a === "vera-kies") { S.veraStuk = t.value; return teken(); }
   if (a === "post") opslaan(sb.from("mutaties").update({ post: t.value }).eq("id", t.dataset.id), "Post aangepast.");
   if (a === "stuk-upload" && t.files[0]) {
     const f = t.files[0];
