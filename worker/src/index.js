@@ -118,12 +118,13 @@ async function testSite(url) {
 // Het stuk gaat via de Files API naar Anthropic (verloopt na 7 dagen) en wordt per stukversie hergebruikt.
 const STUK_PER_IP_PER_HOUR = 30;
 const MAX_PDF = 20 * 1048576;
+const MAX_STUKKEN = 10;
 const stukHits = new Map();
 const bestandIds = new Map(); // sleutel -> file_id, alleen binnen deze Worker-instantie
 
 const STUK_SYSTEM = `Je bent Vera, de AI-assistent van vvekit.nl (Claude, gemaakt door Anthropic). Je beantwoordt vragen van eigenaars over een stuk van hun eigen VvE, meestal de akte van splitsing met het reglement.
 
-- Baseer je antwoord alleen op het stuk. Noem het artikel of de pagina waar het staat, bijvoorbeeld "(artikel 12 lid 3)".
+- Baseer je antwoord alleen op de stukken. Noem het stuk en het artikel of de pagina waar het staat, bijvoorbeeld "(splitsingsakte, artikel 12 lid 3)".
 - Staat het antwoord niet in het stuk, zeg dat eerlijk. Je mag dan in één zin zeggen wat de wet (Burgerlijk Wetboek boek 5, titel 9) meestal regelt, en dat duidelijk als algemene informatie aanmerken.
 - Oude akten verwijzen vaak naar een modelreglement (bijvoorbeeld van 1973, 1983, 1992, 2006 of 2017). Staat er zo'n verwijzing, noem die; de tekst daarvan zit niet in het stuk.
 - Antwoord in gewoon, vriendelijk Nederlands met "u", kort: hooguit 150 woorden. Gebruik **vet** spaarzaam, geen kopjes.
@@ -167,27 +168,30 @@ async function stukVraag(request, env, headers) {
   if (raw.length > MAX_BODY) return json({ error: "Gesprek te lang." }, 413, headers);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "Ongeldig verzoek." }, 400, headers); }
-  const pad = String(body.pad || "");
-  if (!/^[0-9a-f-]{36}\/[^/]{1,200}$/i.test(pad)) return json({ error: "Onbekend stuk." }, 400, headers);
+  // Eén stuk ("pad") of meerdere stukken van dezelfde VvE ("paden", voor "Alle stukken").
+  const paden = [...new Set((Array.isArray(body.paden) ? body.paden : [body.pad]).map((x) => String(x || "")))];
+  if (paden.length < 1 || paden.length > MAX_STUKKEN || !paden.every((x) => /^[0-9a-f-]{36}\/[^/]{1,200}$/i.test(x))
+    || new Set(paden.map((x) => x.split("/")[0])).size !== 1) return json({ error: "Onbekend stuk." }, 400, headers);
   const messages = cleanMessages(body.messages);
   if (!messages) return json({ error: "Ongeldig gesprek." }, 400, headers);
 
-  // Stuk ophalen met het token van de eigenaar: lukt alleen als hij lid is van die VvE.
-  const stukUrl = `${env.SUPABASE_URL}/storage/v1/object/authenticated/stukken/${pad.split("/").map(encodeURIComponent).join("/")}`;
-  const pdf = await fetch(stukUrl, { headers: { apikey: env.SUPABASE_KEY, Authorization: "Bearer " + token } });
-  if (!pdf.ok) return json({ error: pdf.status === 400 || pdf.status === 404 ? "Geen toegang tot dit stuk." : "Stuk ophalen lukte niet." }, 403, headers);
-  if (Number(pdf.headers.get("content-length") || 0) > MAX_PDF) return json({ error: "Dit stuk is te groot." }, 413, headers);
+  // Stukken ophalen met het token van de eigenaar: lukt alleen als hij lid is van die VvE.
+  const pdfs = await Promise.all(paden.map((pad) => fetch(`${env.SUPABASE_URL}/storage/v1/object/authenticated/stukken/${pad.split("/").map(encodeURIComponent).join("/")}`,
+    { headers: { apikey: env.SUPABASE_KEY, Authorization: "Bearer " + token } })));
+  const mis = pdfs.find((r) => !r.ok);
+  if (mis) return json({ error: mis.status === 400 || mis.status === 404 ? "Geen toegang tot dit stuk." : "Stuk ophalen lukte niet." }, 403, headers);
+  if (pdfs.some((r) => Number(r.headers.get("content-length") || 0) > MAX_PDF)) return json({ error: "Een stuk is te groot." }, 413, headers);
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1 });
   try {
-    const naam = await sleutelVoor(pad, pdf.headers.get("etag") || pdf.headers.get("last-modified") || "");
-    const fileId = await bestandId(client, naam, pdf);
-    const titel = pad.split("/")[1];
-    const context = `Dit is een stuk van ${String(body.vve || "de VvE").slice(0, 100)}. De eenheden in deze VvE zijn ${String(body.eenheid || "appartementen").slice(0, 40)}.`;
-    messages[0] = { role: "user", content: [
-      { type: "document", source: { type: "file", file_id: fileId }, title: titel, cache_control: { type: "ephemeral" } },
-      { type: "text", text: context + "\n\nVraag: " + messages[0].content },
-    ] };
+    const docs = [];
+    for (let i = 0; i < paden.length; i++) {
+      const naam = await sleutelVoor(paden[i], pdfs[i].headers.get("etag") || pdfs[i].headers.get("last-modified") || "");
+      docs.push({ type: "document", source: { type: "file", file_id: await bestandId(client, naam, pdfs[i]) }, title: paden[i].split("/")[1] });
+    }
+    docs[docs.length - 1].cache_control = { type: "ephemeral" };
+    const context = `${docs.length > 1 ? "Dit zijn stukken" : "Dit is een stuk"} van ${String(body.vve || "de VvE").slice(0, 100)}. De eenheden in deze VvE zijn ${String(body.eenheid || "appartementen").slice(0, 40)}.`;
+    messages[0] = { role: "user", content: [...docs, { type: "text", text: context + "\n\nVraag: " + messages[0].content }] };
     const response = await client.messages.create({
       model: env.MODEL || "claude-haiku-5-5",
       max_tokens: 3000,
@@ -202,7 +206,8 @@ async function stukVraag(request, env, headers) {
   } catch (error) {
     if (error instanceof Anthropic.APIError) {
       console.error(`Claude API ${error.status}: ${error.message}`);
-      return json({ error: error.status === 429 ? "Het is even druk. Probeer het zo opnieuw." : "Vera kan dit stuk nu niet lezen." }, 502, headers);
+      return json({ error: error.status === 429 ? "Het is even druk. Probeer het zo opnieuw."
+        : error.status === 400 && paden.length > 1 ? "De stukken zijn samen te groot voor Vera. Kies één stuk." : "Vera kan dit stuk nu niet lezen." }, 502, headers);
     }
     throw error;
   }
