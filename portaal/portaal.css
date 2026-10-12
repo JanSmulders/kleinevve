@@ -23,3 +23,4 @@ details.blok{margin-top:16px}
 details.blok summary{cursor:pointer;font-weight:600;color:var(--accent)}
 .voorbeeld-csv{font-size:.85rem}
 .vve-kies{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.linkknop{background:none;border:0;padding:0;color:var(--accent);font:500 .92rem var(--sans);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}

@@ -23,7 +23,7 @@ const vandaag = () => new Date().toISOString().slice(0, 10);
 const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige vergadering", "Jaarrekening en decharge bestuur", "Begroting en voorschotten", "Reservefonds en MJOP", "Besluiten over onderhoud", "Benoeming bestuur en kascommissie", "Rondvraag en sluiting"];
 
 // ---------- toestand ----------
-const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], tab: "overzicht", melding: "", fout: "", import: null };
+const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const bestuur = () => ik()?.rol === "bestuur";
 
@@ -96,11 +96,25 @@ async function opslaan(belofte, ok) {
 
 // ---------- schermen ----------
 function inlogScherm() {
+  const link = S.inlogModus === "link";
   return `<div class="inlog kaart"><h1 style="font-size:1.6rem;margin-top:0">VvE-portaal</h1>
-  <p>Log in met het e-mailadres dat bij uw appartement staat. U krijgt een e-mail met een inloglink; een wachtwoord is niet nodig.</p>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}${S.melding ? `<div class="melding">${esc(S.melding)}</div>` : ""}
-  <form class="formulier" data-form="inloggen"><label>E-mailadres<input type="email" name="email" required autocomplete="email"></label><button class="btn" type="submit">Stuur inloglink</button></form>
+  ${link ? `<p>Vul uw e-mailadres in. U krijgt een e-mail met een inloglink. Daarna kunt u onder <strong>Mijn account</strong> een wachtwoord instellen, zodat u de volgende keer geen mail meer nodig heeft.</p>
+  <form class="formulier" data-form="inloglink"><label>E-mailadres<input type="email" name="email" required autocomplete="email"></label><button class="btn" type="submit">Stuur inloglink</button></form>
+  <p><button class="linkknop" data-actie="inlogmodus" data-modus="wachtwoord">Terug naar inloggen met wachtwoord</button></p>`
+  : `<p>Log in met het e-mailadres dat bij uw appartement staat en uw wachtwoord.</p>
+  <form class="formulier" data-form="inloggen"><label>E-mailadres<input type="email" name="email" required autocomplete="username"></label>
+  <label>Wachtwoord<input type="password" name="ww" required autocomplete="current-password"></label><button class="btn" type="submit">Inloggen</button></form>
+  <p><button class="linkknop" data-actie="inlogmodus" data-modus="link">Wachtwoord vergeten of nog geen wachtwoord? Log in met een e-maillink</button></p>`}
   <p style="font-size:.85rem;color:var(--muted)">Testomgeving. Gemaakt door AI (Claude) als experiment, beheerd door Lumensquared.</p></div>`;
+}
+
+function account() {
+  return `<div class="kaart inlog" style="margin:0 auto"><h2 style="margin-top:0">Mijn account</h2>
+  <p style="color:var(--muted)">Ingelogd als ${esc(S.sessie.user.email)}. Met een wachtwoord logt u voortaan in zonder e-maillink.</p>
+  <form class="formulier" data-form="wachtwoord"><label>Nieuw wachtwoord (minstens 8 tekens)<input type="password" name="ww" required minlength="8" autocomplete="new-password"></label>
+  <label>Nog een keer<input type="password" name="ww2" required minlength="8" autocomplete="new-password"></label><button class="btn" type="submit">Wachtwoord opslaan</button></form>
+  ${S.vve ? `<p><button class="linkknop" data-tab="overzicht">Terug naar het portaal</button></p>` : `<p><button class="linkknop" data-tab="overzicht">Terug</button></p>`}</div>`;
 }
 
 function geenVve(beheerder) {
@@ -228,8 +242,9 @@ function instellingen() {
 
 function teken() {
   if (!sb) { app.innerHTML = `<div class="inlog kaart"><h1 style="font-size:1.5rem;margin-top:0">VvE-portaal</h1><p>Het portaal wordt nog gekoppeld aan de database. Probeer het later opnieuw.</p></div>`; return; }
-  wie.innerHTML = S.sessie ? `<span>${esc(S.sessie.user.email)}</span><button data-actie="uitloggen">Uitloggen</button>` : "";
+  wie.innerHTML = S.sessie ? `<button data-tab="account">Mijn account</button><button data-actie="uitloggen">Uitloggen</button>` : "";
   if (!S.sessie) { app.innerHTML = inlogScherm(); return; }
+  if (S.tab === "account") { app.innerHTML = (S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : "") + (S.melding ? `<div class="melding">${esc(S.melding)}</div>` : "") + account(); return; }
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
   const scherm = { overzicht, geld, onderhoud, vergadering, leden, instellingen }[S.tab] || overzicht;
@@ -317,6 +332,16 @@ app.addEventListener("submit", async (e) => {
   const f = e.target, d = Object.fromEntries(new FormData(f)), vve_id = S.vve?.id;
   switch (f.dataset.form) {
     case "inloggen": {
+      const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.ww });
+      if (error) return meld(/invalid/i.test(error.message) ? "E-mailadres of wachtwoord klopt niet. Nog geen wachtwoord? Log dan in met een e-maillink en stel daarna een wachtwoord in." : "Inloggen lukte niet: " + error.message, true);
+      S.melding = S.fout = ""; return;
+    }
+    case "wachtwoord": {
+      if (d.ww !== d.ww2) return meld("De twee wachtwoorden zijn niet gelijk.", true);
+      const { error } = await sb.auth.updateUser({ password: d.ww });
+      return error ? meld("Opslaan lukte niet: " + error.message, true) : meld("Wachtwoord opgeslagen. Voortaan logt u in met uw e-mailadres en dit wachtwoord.");
+    }
+    case "inloglink": {
       const { error } = await sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + "/portaal/" } });
       return error ? meld(/rate limit/i.test(error.message) ? "Er zijn net te veel inloglinks verstuurd. Probeer het over een uur opnieuw, of gebruik de laatste link die u al kreeg (als u die nog niet gebruikt heeft)." : "Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
     }
@@ -343,6 +368,7 @@ document.addEventListener("click", async (e) => {
   if (t.dataset.tab) { S.tab = t.dataset.tab; S.melding = S.fout = ""; return teken(); }
   const a = t.dataset.actie;
   if (a === "uitloggen") { await sb.auth.signOut(); return; }
+  if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
   if (a === "kies-vve") { await kiesVve(t.dataset.id); return teken(); }
   if (a === "weg" && confirm("Weet u het zeker? Dit kan niet ongedaan worden.")) return opslaan(sb.from(t.dataset.tabel).delete().eq("id", t.dataset.id), "Verwijderd.");
   if (a === "akkoord") return opslaan(sb.from("akkoorden").update({ status: t.dataset.status, besloten_door: S.sessie.user.id, besloten_op: new Date().toISOString() }).eq("id", t.dataset.id), "Besluit vastgelegd.");
@@ -380,8 +406,9 @@ async function start(sessie) {
 if (sb) {
   const hashFout = new URLSearchParams(location.hash.slice(1)).get("error_description");
   if (hashFout) S.fout = "Inloggen lukte niet: " + hashFout + ". Vraag een nieuwe link aan.";
+  if (/access_token|type=magiclink/.test(location.hash)) { S.tab = "account"; S.melding = "U bent ingelogd. Stel hieronder een wachtwoord in, dan heeft u de volgende keer geen e-maillink meer nodig."; }
   sb.auth.onAuthStateChange((event, sessie) => {
-    if (event === "SIGNED_OUT") { S.melding = "U bent uitgelogd. Uw gegevens blijven bewaard. Wilt u weer inloggen, vraag dan hieronder een nieuwe inloglink aan."; S.fout = ""; }
+    if (event === "SIGNED_OUT") { S.tab = "overzicht"; S.melding = "U bent uitgelogd. Uw gegevens blijven bewaard."; S.fout = ""; }
     if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "SIGNED_OUT") setTimeout(() => start(sessie), 0);
   });
 } else teken();
