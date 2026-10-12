@@ -295,6 +295,9 @@ function stukken() {
     ${bestuur() ? `<details class="blok" ${S.stukken.length ? "" : "open"}><summary>Stuk uploaden (PDF)</summary>
       <p style="font-size:.88rem;color:var(--muted)">Alleen PDF, tot 20 MB. Upload alleen stukken die alle leden mogen zien.</p>
       <input type="file" accept="application/pdf,.pdf" data-actie="stuk-upload"></details>` : ""}
+    ${bestuur() && S.stukken.length ? `<div class="blok" style="margin-top:14px"><strong>Laat Vera de gegevens invullen</strong> <span class="ai-label">AI</span>
+      <p style="font-size:.88rem;color:var(--muted);margin:.3em 0 .6em">Vera zoekt in ${S.stukken.length > 10 ? "de nieuwste 10 stukken" : "de stukken"} naar breukdelen, begroting, saldi, herbouwwaarde, vergaderingen en onderhoud. U ziet eerst een voorstel en kiest zelf wat u overneemt.</p>
+      <button class="btn ghost" data-actie="invullen"${S.invulBezig ? " disabled" : ""}>${S.invulBezig ? "Vera leest de stukken… (kan een minuut duren)" : "Gegevens laten invullen"}</button></div>` : ""}
   </div>
   <div class="kaart"><h2>Vraag Vera over de stukken <span class="ai-label">AI</span></h2>
     ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest de gekozen stukken en noemt in welk stuk en artikel het antwoord staat. Controleer belangrijke antwoorden altijd in het stuk zelf. De stukken gaan daarvoor naar Anthropic (de maker van Claude).</p>
@@ -303,7 +306,76 @@ function stukken() {
     ${S.veraBezig ? `<p style="color:var(--muted)">Vera leest ${gekozen === "*" ? "de stukken" : "het stuk"}…</p>` : ""}
     <label>Uw vraag<input name="vraag" required maxlength="600" placeholder="Bijv. wie betaalt onderhoud aan de slagboom?"></label><button class="btn" type="submit"${S.veraBezig ? " disabled" : ""}>Vraag</button></form>`
     : `<p style="color:var(--muted)">Upload eerst een stuk, bijvoorbeeld de splitsingsakte. Daarna kan Vera er vragen over beantwoorden.</p>`}
-  </div></div>`;
+  </div></div>${S.voorstel && bestuur() ? voorstelScherm(S.voorstel) : ""}`;
+}
+
+// ---------- Vera vult in: voorstel uit de stukken, het bestuur kiest wat het overneemt ----------
+const appNr = (a) => String(a ?? "").trim().toLowerCase().replace(/^\D+/, "");
+const zoekLid = (nummer) => S.leden.find((l) => l.appartement === nummer) || S.leden.find((l) => appNr(l.appartement) === appNr(nummer) && appNr(nummer) !== "");
+// Heeft de VvE een onderhoudsplan, dan rekent het portaal de storting in het reservefonds zelf uit; niet dubbel tellen.
+const metMjop = (v) => S.mjop.length > 0 || (v.mjop?.onderdelen?.length || 0) > 0;
+const begrotingPosten = (v) => (v.begroting?.posten || []).filter((p) => !(metMjop(v) && /reserve/i.test(p.post)));
+function voorstelScherm(v) {
+  const vink = (naam, aan, tekst) => `<label style="display:flex;gap:.5em;align-items:flex-start;font-weight:600"><input type="checkbox" name="${naam}"${aan ? " checked" : ""} style="width:auto;margin-top:.25em">${tekst}</label>`;
+  const bron = (b) => b ? `<p style="font-size:.82rem;color:var(--muted);margin:.2em 0 0 1.6em">Bron: ${esc(b)}</p>` : "";
+  const delen = [], a = v.algemeen || {};
+  if (a.herbouwwaarde) delen.push(vink("hbw", true, `Herbouwwaarde ${eur0(a.herbouwwaarde)}`) + bron(a.herbouwwaarde_bron));
+  if (a.saldo_betaal != null || a.saldo_reserve != null) {
+    const jaar = Number(String(a.saldo_datum || "").slice(0, 4)) + 1, past = jaar === S.vve.boekjaar;
+    delen.push(vink("saldi", past, `Startsaldi: betaalrekening ${eur(a.saldo_betaal || 0)}, reservefonds ${eur(a.saldo_reserve || 0)}${a.saldo_datum ? ` (stand ${datumNL(a.saldo_datum)})` : ""}`) + bron(a.saldo_bron)
+      + (past || !jaar ? "" : `<p style="font-size:.85rem;margin:.2em 0 0 1.6em" class="let">Let op: dit zijn de saldi op 1 januari ${jaar}, uw boekjaar is ${S.vve.boekjaar}.</p>`));
+  }
+  const b = v.begroting || {}, bj = b.jaar || S.vve.boekjaar, posten = begrotingPosten(v), overgeslagen = (b.posten?.length || 0) - posten.length;
+  if (posten.length) delen.push(vink("begroting", true, `Begroting ${bj}: ${posten.length} posten, samen ${eur0(posten.reduce((t, p) => t + p.bedrag, 0))}${S.begroting.some((x) => x.jaar === bj) ? ` <span class="let">(vervangt de huidige begroting ${bj})</span>` : ""}`)
+    + `<ul style="margin:.3em 0 0 1.6em;font-size:.9rem">${posten.map((p) => `<li>${esc(p.post)}: ${eur0(p.bedrag)}</li>`).join("")}</ul>`
+    + (overgeslagen ? `<p style="font-size:.85rem;margin:.2em 0 0 1.6em;color:var(--muted)">De storting in het reservefonds neemt Vera niet over: die berekent het portaal uit het onderhoudsplan.</p>` : "") + bron(b.bron));
+  const e = (v.breukdelen?.eenheden || []).map((x) => ({ ...x, lid: zoekLid(x.nummer) }));
+  if (e.length) {
+    const gevonden = e.filter((x) => x.lid), anders = gevonden.filter((x) => Number(x.lid.breukdeel) !== x.teller);
+    delen.push(vink("breukdelen", anders.length > 0, `Breukdelen: ${e.length} uit de akte${v.breukdelen.noemer ? ` (noemer ${nl(v.breukdelen.noemer)})` : ""}; ${gevonden.length} gevonden in het portaal, waarvan ${anders.length} anders dan nu`)
+      + (e.length > gevonden.length ? `<p style="font-size:.85rem;margin:.2em 0 0 1.6em" class="let">Niet in het portaal: ${e.filter((x) => !x.lid).map((x) => esc(x.nummer)).slice(0, 20).join(", ")}. Pas eerst het aantal of de nummers aan bij Instellingen.</p>` : "")
+      + (anders.length ? `<p style="font-size:.85rem;margin:.2em 0 0 1.6em">${anders.slice(0, 12).map((x) => `${esc(x.lid.appartement)}: ${nl(x.lid.breukdeel)} → ${nl(x.teller)}`).join(" · ")}${anders.length > 12 ? " …" : ""}</p>` : "") + bron(v.breukdelen.bron));
+  }
+  (v.vergaderingen || []).forEach((g, i) => {
+    const al = S.vergaderingen.some((x) => x.datum === g.datum);
+    delen.push(vink("verg_" + i, !al, `Vergadering ${/^\d{4}-\d\d-\d\d$/.test(g.datum) ? datumNL(g.datum) : esc(g.datum)}${al ? ' <span class="let">(staat er al)</span>' : ""}`)
+      + `<p style="font-size:.88rem;margin:.2em 0 0 1.6em;white-space:pre-line">${esc(g.samenvatting)}</p>` + bron(g.bron));
+  });
+  const m = v.mjop?.onderdelen || [];
+  if (m.length) delen.push(vink("mjop", S.mjop.length === 0, `Onderhoudsplan: ${m.length} onderdelen toevoegen${S.mjop.length ? ` <span class="let">(er staan er al ${S.mjop.length})</span>` : ""}`)
+    + `<ul style="margin:.3em 0 0 1.6em;font-size:.9rem">${m.map((o) => `<li>${esc(o.onderdeel)}: ${eur0(o.kosten)}, laatst ${o.laatst}, elke ${o.levensduur} jaar</li>`).join("")}</ul>` + bron(v.mjop.bron));
+  return `<div class="kaart" style="margin-top:20px"><h2>Voorstel van Vera <span class="ai-label">AI</span></h2>
+  <p style="margin-top:0;color:var(--muted);font-size:.9rem">Controleer de bedragen met het stuk ernaast. Alleen wat aangevinkt is, wordt opgeslagen.${v.opmerking ? " " + esc(v.opmerking) : ""}</p>
+  ${delen.length ? `<form class="formulier" data-form="voorstel">${delen.map((x) => `<div style="padding:.6em 0;border-top:1px solid var(--line, #e5e2da)">${x}</div>`).join("")}
+  <p><button class="btn" type="submit">Aangevinkte gegevens overnemen</button> <button class="klein-knop" type="button" data-actie="voorstel-weg">Voorstel sluiten</button></p></form>`
+  : `<p>Vera vond in de stukken geen gegevens om in te vullen.</p><p><button class="klein-knop" data-actie="voorstel-weg">Sluiten</button></p>`}</div>`;
+}
+async function voorstelOvernemen(d) {
+  const v = S.voorstel, vve_id = S.vve.id, a = v.algemeen || {}, klaar = [], fouten = [];
+  const doe = async (wat, belofte) => { const { error } = await belofte; (error ? fouten : klaar).push(error ? `${wat}: ${error.message}` : wat); };
+  const upd = {};
+  if (d.hbw) upd.herbouwwaarde = a.herbouwwaarde;
+  if (d.saldi) { upd.startsaldo_betaal = a.saldo_betaal || 0; upd.startsaldo_reserve = a.saldo_reserve || 0; }
+  if (Object.keys(upd).length) await doe("algemene gegevens", sb.from("vves").update(upd).eq("id", vve_id));
+  if (d.begroting) {
+    const jaar = v.begroting.jaar || S.vve.boekjaar;
+    const weg = await sb.from("begroting").delete().eq("vve_id", vve_id).eq("jaar", jaar);
+    if (weg.error) fouten.push("begroting: " + weg.error.message);
+    else await doe(`begroting ${jaar}`, sb.from("begroting").insert(begrotingPosten(v).map((p) => ({ vve_id, jaar, post: p.post.slice(0, 80), bedrag: p.bedrag }))));
+  }
+  if (d.breukdelen) {
+    const rijen = v.breukdelen.eenheden.map((x) => ({ x, lid: zoekLid(x.nummer) })).filter((r) => r.lid && r.x.teller > 0 && Number(r.lid.breukdeel) !== r.x.teller);
+    const res = await Promise.all(rijen.map((r) => sb.from("leden").update({ breukdeel: r.x.teller }).eq("id", r.lid.id)));
+    const fout = res.find((r) => r.error);
+    fout ? fouten.push("breukdelen: " + fout.error.message) : klaar.push(`${rijen.length} breukdelen`);
+  }
+  for (const [i, g] of (v.vergaderingen || []).entries()) if (d["verg_" + i] && /^\d{4}-\d\d-\d\d$/.test(g.datum))
+    await doe(`vergadering ${datumNL(g.datum)}`, sb.from("vergaderingen").insert({ vve_id, datum: g.datum, agenda: g.agenda.slice(0, 30), notities: `${g.samenvatting}\n\n(Samenvatting door Vera uit ${g.bron})` }));
+  if (d.mjop) await doe("onderhoudsplan", sb.from("mjop").insert(v.mjop.onderdelen.filter((o) => o.levensduur > 0).map((o) => ({ vve_id, onderdeel: o.onderdeel.slice(0, 120), laatst: o.laatst, levensduur: o.levensduur, kosten: o.kosten }))));
+  S.voorstel = null;
+  await kiesVve(vve_id);
+  if (fouten.length) return meld("Niet alles lukte. " + fouten.join("; ") + (klaar.length ? ". Wel opgeslagen: " + klaar.join(", ") + "." : ""), true);
+  meld(klaar.length ? "Overgenomen: " + klaar.join(", ") + "." : "Niets aangevinkt, er is niets veranderd.");
 }
 
 function instellingen() {
@@ -419,6 +491,7 @@ app.addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target, d = Object.fromEntries(new FormData(f)), vve_id = S.vve?.id;
   switch (f.dataset.form) {
+    case "voorstel": return voorstelOvernemen(d);
     case "inloggen": {
       const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.ww });
       if (error) return meld(/invalid/i.test(error.message) ? "E-mailadres of wachtwoord klopt niet. Nog geen wachtwoord? Log dan in met een e-maillink en stel daarna een wachtwoord in." : "Inloggen lukte niet: " + error.message, true);
@@ -528,6 +601,19 @@ document.addEventListener("click", async (e) => {
   if (a === "alle-een") {
     if (!confirm(`Alle ${S.leden.length} ${eN()} krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
     return opslaan(sb.from("leden").update({ breukdeel: 1 }).eq("vve_id", S.vve.id), "Alle breukdelen staan op 1.");
+  }
+  if (a === "voorstel-weg") { S.voorstel = null; return teken(); }
+  if (a === "invullen") {
+    S.invulBezig = true; S.voorstel = null; S.fout = S.melding = ""; teken();
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch(VERA_API + "/invullen", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
+        body: JSON.stringify({ paden: S.stukken.slice(0, 10).map((f) => f.pad), vve: S.vve.naam, eenheid: eN() }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.voorstel) throw new Error(j.error || "Vera kon de stukken niet invullen.");
+      S.voorstel = j.voorstel;
+    } catch (err) { S.fout = err.message === "Failed to fetch" ? "Vera is nu niet bereikbaar." : err.message; }
+    S.invulBezig = false; return teken();
   }
   if (a === "stuk-weg") {
     if (!confirm("Dit stuk verwijderen? Dit kan niet ongedaan worden.")) return;
