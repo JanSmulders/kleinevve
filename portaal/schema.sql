@@ -170,3 +170,34 @@ revoke all on function public.stem(uuid, text, text) from public, anon;
 grant execute on function public.stem(uuid, text, text) to authenticated;
 
 -- Daarna (eenmalig, niet in git als echte data): insert into public.beheerders (email) values ('<e-mailadres beheerder>');
+
+-- Bestuur maakt een account (e-mail + startwachtwoord) voor een eigenaar uit de ledenlijst (akkoord Jan 2026-10-12).
+-- Geen inlogmail nodig. Alleen het bestuur van dezelfde VvE; bestaande accounts worden nooit aangepast.
+create or replace function public.maak_account(p_lid uuid, p_wachtwoord text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare l record; e text; nieuw uuid := gen_random_uuid();
+begin
+  select * into l from leden where id = p_lid;
+  if l is null then raise exception 'Appartement niet gevonden'; end if;
+  if not is_bestuur(l.vve_id) then raise exception 'Alleen het bestuur kan accounts maken'; end if;
+  if l.user_id is not null then raise exception 'Dit appartement heeft al een account'; end if;
+  e := lower(trim(coalesce(l.email, '')));
+  if e = '' then raise exception 'Zet eerst een e-mailadres bij dit appartement'; end if;
+  if length(coalesce(p_wachtwoord, '')) < 8 then raise exception 'Kies een wachtwoord van minstens 8 tekens'; end if;
+  if exists (select 1 from auth.users where lower(email) = e) then
+    raise exception 'Dit e-mailadres heeft al een account. De eigenaar kan inloggen met zijn eigen wachtwoord of via een e-maillink.';
+  end if;
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+    confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current, reauthentication_token)
+  values ('00000000-0000-0000-0000-000000000000', nieuw, 'authenticated', 'authenticated', e,
+    crypt(p_wachtwoord, gen_salt('bf')), now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '', '', '');
+  insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+  values (gen_random_uuid(), nieuw, nieuw::text, 'email',
+    jsonb_build_object('sub', nieuw::text, 'email', e, 'email_verified', true, 'phone_verified', false), now(), now(), now());
+  update leden set user_id = nieuw where id = p_lid;
+  return l.appartement;
+end $$;
+revoke all on function public.maak_account(uuid, text) from public, anon;
+grant execute on function public.maak_account(uuid, text) to authenticated;

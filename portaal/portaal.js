@@ -223,9 +223,9 @@ function stemming(s) {
 }
 
 function leden() {
-  return `<div class="kaart"><h2>Appartementen en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Ingelogd</th>${bestuur() ? "<th></th>" : ""}</tr>
-  ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${l.breukdeel}</td><td>${esc(l.naam || "")}</td><td>${esc(l.email || "")}</td><td>${l.rol}</td><td>${l.user_id ? "ja" : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
-  ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met dat adres kan hij of zij inloggen en alles van de VvE inzien, maar niets wijzigen (behalve als rol "bestuur").</p>
+  return `<div class="kaart"><h2>Appartementen en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
+  ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${l.breukdeel}</td><td>${esc(l.naam || "")}</td><td>${esc(l.email || "")}</td><td>${l.rol}</td><td>${l.user_id ? "ja" : bestuur() && l.email ? `<button class="klein-knop" data-actie="account-maken" data-id="${l.id}">Account maken</button>` : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
+  ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met "Account maken" krijgt de eigenaar een startwachtwoord dat u persoonlijk doorgeeft. Hij of zij kan dan alles van de VvE inzien, maar niets wijzigen (behalve als rol "bestuur").</p>
   <form class="formulier rij" data-form="lid"><label>Appartement<input name="app" required></label><label>Breukdeel<input name="deel" required inputmode="decimal"></label><label>Naam<input name="naam"></label><label>E-mail<input type="email" name="email"></label><label>Rol<select name="rol"><option>eigenaar</option><option>bestuur</option></select></label><button class="btn" type="submit">Toevoegen</button></form>` : ""}</div>`;
 }
 
@@ -368,6 +368,17 @@ document.addEventListener("click", async (e) => {
   if (t.dataset.tab) { S.tab = t.dataset.tab; S.melding = S.fout = ""; return teken(); }
   const a = t.dataset.actie;
   if (a === "uitloggen") { await sb.auth.signOut(); return; }
+  if (a === "account-maken") {
+    const l = S.leden.find((x) => x.id === t.dataset.id);
+    const tekens = "abcdefghjkmnpqrstuvwxyz23456789";
+    const r = crypto.getRandomValues(new Uint32Array(10));
+    const ww = Array.from(r, (n, i) => tekens[n % tekens.length] + (i === 4 ? "-" : "")).join("");
+    if (!confirm(`Account maken voor app. ${l.appartement} (${l.email})?`)) return;
+    const { error } = await sb.rpc("maak_account", { p_lid: l.id, p_wachtwoord: ww });
+    if (error) return meld(error.message, true);
+    await kiesVve(S.vve.id);
+    return meld(`Account gemaakt voor app. ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). De eigenaar kan het daarna wijzigen onder Mijn account.`);
+  }
   if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
   if (a === "kies-vve") { await kiesVve(t.dataset.id); return teken(); }
   if (a === "weg" && confirm("Weet u het zeker? Dit kan niet ongedaan worden.")) return opslaan(sb.from(t.dataset.tabel).delete().eq("id", t.dataset.id), "Verwijderd.");
