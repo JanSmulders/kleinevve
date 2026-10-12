@@ -16,6 +16,10 @@ const eur0 = (n) => "€ " + Math.round(Number(n || 0)).toLocaleString("nl-NL");
 // Breukdeel: "1", "1/32" of "12/1000" -> alleen de teller telt; het portaal deelt zelf door het totaal.
 const deel = (s) => { const t = String(s ?? "").trim(); return t === "" ? 1 : getal(t.split("/")[0]); };
 const nl = (n) => Number(n).toLocaleString("nl-NL", { maximumFractionDigits: 4 });
+const EENHEDEN = { appartement: ["appartement", "appartementen", "App."], parkeerplaats: ["parkeerplaats", "parkeerplaatsen", "Pl."], bedrijfsruimte: ["bedrijfsruimte", "bedrijfsruimten", "Ruimte"], berging: ["berging", "bergingen", "Berging"], eenheid: ["eenheid", "eenheden", "Nr."] };
+const eh = () => EENHEDEN[S.vve?.eenheid] || EENHEDEN.appartement;
+const e1 = () => eh()[0], eN = () => eh()[1], eK = () => eh()[2];
+const cap = (t) => t[0].toUpperCase() + t.slice(1);
 const noemer = () => S.leden.reduce((t, l) => t + Number(l.breukdeel), 0);
 const getal = (s) => {
   let t = String(s ?? "").trim().replace(/\s|€/g, "");
@@ -69,7 +73,7 @@ function aandachtspunten(c) {
   const ditJaar = S.vergaderingen.some((v) => v.datum.startsWith(String(c.jaar)) || v.datum.startsWith(String(c.jaar + 1)));
   if (!ditJaar) p.push(["let", "Er staat nog geen ledenvergadering gepland. Een VvE moet minstens één keer per jaar vergaderen."]);
   for (const w of S.wisverzoeken) if (w.status === "open" && bestuur()) p.push(["let", `App. ${esc(w.appartement)} vraagt om wissen van persoonsgegevens (zie Leden). Handel dit binnen een maand af.`]);
-  if (!S.leden.some((l) => l.email)) p.push(["let", "Nog geen e-mailadressen bij de appartementen: eigenaren kunnen dan nog niet inloggen."]);
+  if (!S.leden.some((l) => l.email)) p.push(["let", `Nog geen e-mailadressen bij de ${eN()}: eigenaren kunnen dan nog niet inloggen.`]);
   if (!p.length) p.push(["ok", "Alles op orde: geen achterstanden, geen onderhoud binnen 2 jaar, vergadering gepland."]);
   return p;
 }
@@ -108,7 +112,7 @@ function inlogScherm() {
   ${link ? `<p>Vul uw e-mailadres in. U krijgt een e-mail met een inloglink. Daarna kunt u onder <strong>Mijn account</strong> een wachtwoord instellen, zodat u de volgende keer geen mail meer nodig heeft.</p>
   <form class="formulier" data-form="inloglink"><label>E-mailadres<input type="email" name="email" required autocomplete="email"></label><button class="btn" type="submit">Stuur inloglink</button></form>
   <p><button class="linkknop" data-actie="inlogmodus" data-modus="wachtwoord">Terug naar inloggen met wachtwoord</button></p>`
-  : `<p>Log in met het e-mailadres dat bij uw appartement staat en uw wachtwoord.</p>
+  : `<p>Log in met het e-mailadres dat bij uw ${e1()} staat en uw wachtwoord.</p>
   <form class="formulier" data-form="inloggen"><label>E-mailadres<input type="email" name="email" required autocomplete="username"></label>
   <label>Wachtwoord<input type="password" name="ww" required autocomplete="current-password"></label><button class="btn" type="submit">Inloggen</button></form>
   <p><button class="linkknop" data-actie="inlogmodus" data-modus="link">Wachtwoord vergeten of nog geen wachtwoord? Log in met een e-maillink</button></p>`}
@@ -129,13 +133,13 @@ function account() {
   <h3 style="margin-top:28px">Mijn gegevens (AVG)</h3>
   <p style="color:var(--muted);font-size:.92rem">Dit staat over u in het portaal. <a href="privacy.html" target="_blank" rel="noopener">Lees de privacyverklaring</a>.</p>
   <table class="lijst"><tr><th>E-mailadres (inloggen)</th><td>${esc(u.email)}</td></tr><tr><th>Account sinds</th><td>${new Date(u.created_at).toLocaleDateString("nl-NL")}</td></tr>
-  ${mijn.map((l) => `<tr><th>${esc(S.vve?.naam || "VvE")}</th><td>App. ${esc(l.appartement)} (breukdeel ${nl(l.breukdeel)}/${nl(noemer())}), rol ${l.rol}${l.naam ? `, naam ${esc(l.naam)}` : ""}</td></tr>`).join("")}</table>
-  <p style="font-size:.85rem;color:var(--muted)">Betalingen van uw appartement staan in de boekhouding van de VvE. Die moet de VvE 7 jaar bewaren; die worden dus niet gewist.</p>
+  ${mijn.map((l) => `<tr><th>${esc(S.vve?.naam || "VvE")}</th><td>${eK()} ${esc(l.appartement)} (breukdeel ${nl(l.breukdeel)}/${nl(noemer())}), rol ${l.rol}${l.naam ? `, naam ${esc(l.naam)}` : ""}</td></tr>`).join("")}</table>
+  <p style="font-size:.85rem;color:var(--muted)">Betalingen van uw ${e1()} staan in de boekhouding van de VvE. Die moet de VvE 7 jaar bewaren; die worden dus niet gewist.</p>
   ${afgewezen.map((w) => `<div class="melding fout">Uw verzoek van ${new Date(w.aangemaakt).toLocaleDateString("nl-NL")} is afgewezen${w.notitie ? `: ${esc(w.notitie)}` : "."}</div>`).join("")}
   ${!mijn.length ? "" : verzoek
     ? `<div class="melding">U heeft op ${new Date(verzoek.aangemaakt).toLocaleDateString("nl-NL")} gevraagd om uw gegevens te wissen. Het bestuur handelt dit af.</div><p><button class="klein-knop" data-actie="wis-intrekken" data-id="${verzoek.id}">Verzoek intrekken</button></p>`
     : `<details class="blok"><summary>Mijn gegevens laten wissen</summary>
-      <p style="font-size:.9rem">Het bestuur wist dan uw naam en e-mailadres bij het appartement en verwijdert uw account. U kunt daarna niet meer inloggen. Het appartement en de boekhouding blijven bestaan.</p>
+      <p style="font-size:.9rem">Het bestuur wist dan uw naam en e-mailadres bij het ${e1()} en verwijdert uw account. U kunt daarna niet meer inloggen. Het ${e1()} en de boekhouding blijven bestaan.</p>
       <form class="formulier" data-form="wisverzoek" data-lid="${mijn[0].id}"><label>Reden (mag leeg blijven)<input name="reden"></label><button class="btn" type="submit">Verzoek indienen</button></form></details>`}
   <p style="margin-top:20px"><button class="linkknop" data-tab="overzicht">${S.vve ? "Terug naar het portaal" : "Terug"}</button></p></div>`;
 }
@@ -143,18 +147,18 @@ function account() {
 function geenVve(beheerder) {
   return `<div class="inlog kaart"><h1 style="font-size:1.5rem;margin-top:0">Welkom</h1>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}
-  ${beheerder ? `<p>U heeft nog geen VvE. Maak er een aan; u wordt dan bestuurder van uw eigen appartement.</p>
+  ${beheerder ? `<p>U heeft nog geen VvE. Maak er een aan; u wordt dan bestuurder van uw eigen ${e1()}.</p>
   <form class="formulier" data-form="nieuwe-vve"><label>Naam van de VvE<input name="naam" required placeholder="VvE Voorbeeldstraat 12"></label>
-  <label>Uw appartement<input name="app" required placeholder="bijv. 1 of 12-A"></label>
-  <label>Breukdeel van uw appartement<input name="deel" inputmode="decimal" value="1"></label>
-  <p style="font-size:.85rem;color:var(--muted);margin:0">Zijn alle appartementen gelijk? Laat dan 1 staan; bij 32 appartementen wordt dat vanzelf 1/32. Staat in de splitsingsakte iets als 12/1000, vul dan 12 in.</p>
+  <label>Uw ${e1()}<input name="app" required placeholder="bijv. 1 of 12-A"></label>
+  <label>Breukdeel van uw ${e1()}<input name="deel" inputmode="decimal" value="1"></label>
+  <p style="font-size:.85rem;color:var(--muted);margin:0">Zijn alle ${eN()} gelijk? Laat dan 1 staan; bij 32 ${eN()} wordt dat vanzelf 1/32. Staat in de splitsingsakte iets als 12/1000, vul dan 12 in.</p>
   <button class="btn" type="submit">VvE aanmaken</button></form>`
-  : `<p>Uw e-mailadres (${esc(S.sessie.user.email)}) staat nog bij geen enkele VvE. Vraag het bestuur van uw VvE om uw e-mailadres bij uw appartement te zetten, en log daarna opnieuw in.</p>`}</div>`;
+  : `<p>Uw e-mailadres (${esc(S.sessie.user.email)}) staat nog bij geen enkele VvE. Vraag het bestuur van uw VvE om uw e-mailadres bij uw ${e1()} te zetten, en log daarna opnieuw in.</p>`}</div>`;
 }
 
 function kop(c) {
   return `<section class="kop"><div><p class="pill">VvE-portaal${bestuur() ? " · bestuur" : ""}</p><h1>${esc(S.vve.naam)}</h1>
-  <p class="sub">${S.leden.length} appartementen · boekjaar ${c.jaar} · u bent app. ${esc(ik()?.appartement)}</p>
+  <p class="sub">${S.leden.length} ${eN()} · boekjaar ${c.jaar} · u bent ${eK().toLowerCase()} ${esc(ik()?.appartement)}</p>
   ${S.vves.length > 1 ? `<div class="vve-kies">${S.vves.map((v) => `<button class="chip" data-actie="kies-vve" data-id="${v.id}">${esc(v.naam)}</button>`).join("")}</div>` : ""}</div>
   <div class="kop-vera"><img src="/img/vera.svg" alt="" width="44" height="44"><div><strong>Vera <span class="ai-label">AI</span></strong><span>Controleert de cijfers bij elk bezoek.</span></div></div></section>
   <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
@@ -188,7 +192,7 @@ function geld(c) {
   return `<div class="twee">
     <div class="kaart"><h2>Voorschotten ${c.jaar}</h2>
       <p style="margin-top:0;color:var(--muted);font-size:.9rem">Begroting ${eur0(c.vast)} + reservering ${eur0(c.reservering)} = ${eur0(c.totaal)} per jaar, verdeeld naar breukdeel. Verwacht = ${c.maanden} maanden.</p>
-      <div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Deel</th><th class="n">Per maand</th><th class="n">Ontvangen</th><th class="n">Verschil</th></tr>
+      <div class="tw"><table class="lijst"><tr><th>${eK()}</th><th class="n">Deel</th><th class="n">Per maand</th><th class="n">Ontvangen</th><th class="n">Verschil</th></tr>
       ${c.perLid.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(c.noemer)}</td><td class="n">${eur(l.pm)}</td><td class="n">${eur(l.ontvangen)}</td><td class="n ${l.verschil < -1 ? "let" : "ok"}">${eur(l.verschil)}</td></tr>`).join("")}</table></div></div>
     <div class="kaart"><h2>Begroting ${c.jaar}</h2><div class="tw"><table class="lijst"><tr><th>Post</th><th class="n">Begroot</th><th class="n">Werkelijk</th>${bestuur() ? "<th></th>" : ""}</tr>
       ${c.posten.map((b) => `<tr><td>${esc(b.post)}</td><td class="n">${eur0(b.bedrag)}</td><td class="n">${eur0(c.werkelijk(b.post))}</td>${bestuur() ? `<td><button class="klein-knop" data-actie="weg" data-tabel="begroting" data-id="${b.id}">×</button></td>` : ""}</tr>`).join("")}
@@ -200,8 +204,8 @@ function geld(c) {
     ${bestuur() ? `<details class="blok" ${S.import ? "open" : ""}><summary>Bankafschrift inlezen (CSV)</summary>
       <p style="font-size:.9rem;color:var(--muted)">Download in uw bankapp de transacties als CSV (ING, Rabobank, ABN AMRO, bunq, SNS en Triodos werken meestal). Rekeningnummers worden niet opgeslagen; alleen datum, omschrijving en bedrag.</p>
       <input type="file" accept=".csv,text/csv" data-actie="csv">${S.import ? importVoorbeeld(posten) : ""}</details>
-      <details class="blok"><summary>Eén mutatie toevoegen</summary><form class="formulier rij" data-form="mutatie"><label>Datum<input type="date" name="datum" required value="${vandaag()}"></label><label>Omschrijving<input name="oms" required></label><label>Bedrag (af = min)<input name="bedrag" required inputmode="decimal" placeholder="-75,00"></label><label>Post<select name="post">${posten.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label><label>Appartement<select name="app"><option value="">–</option>${S.leden.map((l) => `<option>${esc(l.appartement)}</option>`).join("")}</select></label><button class="btn" type="submit">Toevoegen</button></form></details>` : ""}
-    <div class="tw" style="margin-top:12px"><table class="lijst"><tr><th>Datum</th><th>Omschrijving</th><th>Post</th><th>App.</th><th class="n">Bedrag</th>${bestuur() ? "<th></th>" : ""}</tr>
+      <details class="blok"><summary>Eén mutatie toevoegen</summary><form class="formulier rij" data-form="mutatie"><label>Datum<input type="date" name="datum" required value="${vandaag()}"></label><label>Omschrijving<input name="oms" required></label><label>Bedrag (af = min)<input name="bedrag" required inputmode="decimal" placeholder="-75,00"></label><label>Post<select name="post">${posten.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label><label>${cap(e1())}<select name="app"><option value="">–</option>${S.leden.map((l) => `<option>${esc(l.appartement)}</option>`).join("")}</select></label><button class="btn" type="submit">Toevoegen</button></form></details>` : ""}
+    <div class="tw" style="margin-top:12px"><table class="lijst"><tr><th>Datum</th><th>Omschrijving</th><th>Post</th><th>${eK()}</th><th class="n">Bedrag</th>${bestuur() ? "<th></th>" : ""}</tr>
     ${S.mutaties.slice(0, 100).map((m) => `<tr><td>${datumNL(m.datum)}</td><td>${esc(m.omschrijving)}</td><td>${kies(m)}</td><td>${esc(m.appartement || "")}</td><td class="n ${m.bedrag > 0 ? "ok" : ""}">${eur(m.bedrag)}</td>${bestuur() ? `<td><button class="klein-knop" data-actie="weg" data-tabel="mutaties" data-id="${m.id}">×</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="6" style="color:var(--muted)">Nog geen mutaties.</td></tr>`}</table></div></div>`;
 }
 
@@ -240,7 +244,7 @@ function stemming(s) {
   const uit = voor + tegen;
   const res = !aanwezig ? "nog geen stemmen" : !uit ? "geen geldige stemmen" : voor > uit / 2 ? "aangenomen" : "verworpen";
   return `<div class="akkoord"><p><strong>${esc(s.voorstel)}</strong></p>
-  ${S.leden.map((l) => `<div class="stem"><strong>App. ${esc(l.appartement)} <span style="font-weight:400;color:var(--muted)">(${nl(l.breukdeel)}/${nl(noemer())})</span></strong><div class="keus">
+  ${S.leden.map((l) => `<div class="stem"><strong>${eK()} ${esc(l.appartement)} <span style="font-weight:400;color:var(--muted)">(${nl(l.breukdeel)}/${nl(noemer())})</span></strong><div class="keus">
     ${["voor", "tegen", "blanco", "afwezig"].map((k) => `<button ${bestuur() ? "" : "disabled"} data-actie="stem" data-id="${s.id}" data-app="${esc(l.appartement)}" data-k="${k}" aria-pressed="${s.stemmen[l.appartement] === k}">${k}</button>`).join("")}</div></div>`).join("")}
   <p class="uitslag">Voor ${voor}, tegen ${tegen}, blanco ${blanco} (aanwezig ${aanwezig} van ${noemer}): <span class="${res === "aangenomen" ? "ok" : "let"}">${res}</span></p>
   <p style="font-size:.82rem;color:var(--muted)">Gewone meerderheid van de uitgebrachte stemmen. Welke meerderheid echt nodig is, staat in uw reglement.</p></div>`;
@@ -250,41 +254,43 @@ function wisverzoekenBestuur() {
   const open = S.wisverzoeken.filter((w) => w.status === "open");
   if (!bestuur() || !open.length) return "";
   return `<div class="kaart" style="margin-bottom:20px;border-left:4px solid #d97706"><h2>Verzoeken om gegevens te wissen (${open.length})</h2>
-  <p style="font-size:.9rem;color:var(--muted);margin-top:0">Een eigenaar mag vragen om zijn persoonsgegevens te wissen (AVG). Handel dit binnen een maand af. Wissen haalt naam en e-mail bij het appartement weg en verwijdert het account; breukdeel en boekhouding blijven.</p>
-  ${open.map((w) => `<div class="akkoord"><p><strong>App. ${esc(w.appartement)}</strong> · ${new Date(w.aangemaakt).toLocaleDateString("nl-NL")}</p>${w.reden ? `<p class="uitleg">Reden: ${esc(w.reden)}</p>` : ""}
+  <p style="font-size:.9rem;color:var(--muted);margin-top:0">Een eigenaar mag vragen om zijn persoonsgegevens te wissen (AVG). Handel dit binnen een maand af. Wissen haalt naam en e-mail bij het ${e1()} weg en verwijdert het account; breukdeel en boekhouding blijven.</p>
+  ${open.map((w) => `<div class="akkoord"><p><strong>${eK()} ${esc(w.appartement)}</strong> · ${new Date(w.aangemaakt).toLocaleDateString("nl-NL")}</p>${w.reden ? `<p class="uitleg">Reden: ${esc(w.reden)}</p>` : ""}
     <div class="knoppen"><button class="btn" data-actie="wis-uitvoeren" data-id="${w.id}">Gegevens wissen</button><button class="btn ghost" data-actie="wis-afwijzen" data-id="${w.id}">Afwijzen</button></div></div>`).join("")}</div>`;
 }
 
 function leden() {
-  return `${wisverzoekenBestuur()}<div class="kaart"><h2>Appartementen en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
+  return `${wisverzoekenBestuur()}<div class="kaart"><h2>${cap(eN())} en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>${eK()}</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
   ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(noemer())}</td><td>${esc(l.naam || "")}</td><td>${esc(l.email || "")}</td><td>${l.rol}</td><td>${l.user_id ? "ja" : bestuur() && l.email ? `<button class="klein-knop" data-actie="account-maken" data-id="${l.id}">Account maken</button>` : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
   ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met "Account maken" krijgt de eigenaar een startwachtwoord dat u persoonlijk doorgeeft. Hij of zij kan dan alles van de VvE inzien, maar niets wijzigen (behalve als rol "bestuur").</p>
-  <p style="font-size:.88rem;color:var(--muted)">Breukdeel: zijn alle appartementen gelijk, laat dan overal 1 staan (bij 32 appartementen is dat 1/32). Staat in de splitsingsakte bijvoorbeeld 12/1000, vul dan 12 in. Het portaal deelt zelf door het totaal.</p>
-  <details class="blok" ${S.leden.length < 3 ? "open" : ""}><summary>Meerdere appartementen in één keer toevoegen</summary>
-  <form class="formulier rij" data-form="reeks"><label>Van nummer<input name="van" required inputmode="numeric" value="1"></label><label>Tot en met<input name="tot" required inputmode="numeric" placeholder="32"></label><label>Breukdeel per appartement<input name="deel" inputmode="decimal" value="1"></label><button class="btn" type="submit">Toevoegen</button></form>
+  <p style="font-size:.88rem;color:var(--muted)">Breukdeel: zijn alle ${eN()} gelijk, laat dan overal 1 staan (bij 32 ${eN()} is dat 1/32). Staat in de splitsingsakte bijvoorbeeld 12/1000, vul dan 12 in. Het portaal deelt zelf door het totaal.</p>
+  <details class="blok" ${S.leden.length < 3 ? "open" : ""}><summary>Meerdere ${eN()} in één keer toevoegen</summary>
+  <form class="formulier rij" data-form="reeks"><label>Van nummer<input name="van" required inputmode="numeric" value="1"></label><label>Tot en met<input name="tot" required inputmode="numeric" placeholder="32"></label><label>Breukdeel per ${e1()}<input name="deel" inputmode="decimal" value="1"></label><button class="btn" type="submit">Toevoegen</button></form>
   <p style="font-size:.85rem;color:var(--muted)">Nummers die al bestaan worden overgeslagen. Namen en e-mailadressen kunt u later invullen.</p></details>
-  <h3>Eén appartement toevoegen</h3>
-  <form class="formulier rij" data-form="lid"><label>Appartement<input name="app" required></label><label>Breukdeel<input name="deel" inputmode="decimal" value="1"></label><label>Naam<input name="naam"></label><label>E-mail<input type="email" name="email"></label><label>Rol<select name="rol"><option>eigenaar</option><option>bestuur</option></select></label><button class="btn" type="submit">Toevoegen</button></form>` : ""}</div>`;
+  <h3>Eén ${e1()} toevoegen</h3>
+  <form class="formulier rij" data-form="lid"><label>${cap(e1())}<input name="app" required></label><label>Breukdeel<input name="deel" inputmode="decimal" value="1"></label><label>Naam<input name="naam"></label><label>E-mail<input type="email" name="email"></label><label>Rol<select name="rol"><option>eigenaar</option><option>bestuur</option></select></label><button class="btn" type="submit">Toevoegen</button></form>` : ""}</div>`;
 }
 
 function instellingen() {
   const v = S.vve;
   return `<div class="kaart"><h2>Instellingen</h2><form class="formulier rij" data-form="instellingen">
   <label>Naam<input name="naam" required value="${esc(v.naam)}"></label>
+  <label>Soort<select name="eenheid">${Object.entries(EENHEDEN).map(([k, w]) => `<option value="${k}"${k === (v.eenheid || "appartement") ? " selected" : ""}>${cap(w[1])}</option>`).join("")}</select></label>
+  <label>Aantal ${eN()}<input name="aantal" required inputmode="numeric" value="${S.leden.length}"></label>
   <label>Boekjaar<input name="jaar" required inputmode="numeric" value="${v.boekjaar}"></label>
   <label>Herbouwwaarde<input name="hbw" inputmode="decimal" value="${v.herbouwwaarde ?? ""}"></label>
   <label>Saldo betaalrekening 1 januari<input name="sb" inputmode="decimal" value="${v.startsaldo_betaal}"></label>
   <label>Saldo reservefonds 1 januari<input name="sr" inputmode="decimal" value="${v.startsaldo_reserve}"></label>
   <button class="btn" type="submit">Opslaan</button></form></div>
-  <div class="kaart" style="margin-top:20px"><h2>Appartementen aanpassen</h2>
-  <p style="margin-top:0;color:var(--muted);font-size:.9rem">Pas hier per appartement het nummer, breukdeel, de naam, het e-mailadres en de rol aan, en kies onderaan "Wijzigingen opslaan". Breukdeel: vul de teller in (1, of 12 bij 12/1000); het portaal deelt zelf door het totaal (nu ${nl(noemer())}).</p>
+  <div class="kaart" style="margin-top:20px"><h2>${cap(eN())} aanpassen</h2>
+  <p style="margin-top:0;color:var(--muted);font-size:.9rem">Pas hier per ${e1()} het nummer, breukdeel, de naam, het e-mailadres en de rol aan, en kies onderaan "Wijzigingen opslaan". Breukdeel: vul de teller in (1, of 12 bij 12/1000); het portaal deelt zelf door het totaal (nu ${nl(noemer())}).</p>
   <p><button class="klein-knop" data-actie="alle-een">Alle breukdelen op 1 zetten</button></p>
-  <form data-form="appartementen"><div class="tw"><table class="lijst bewerk"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th></tr>
+  <form data-form="appartementen"><div class="tw"><table class="lijst bewerk"><tr><th>${eK()}</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th></tr>
   ${S.leden.map((l) => `<tr><td><input name="app_${l.id}" value="${esc(l.appartement)}" required></td><td><input name="deel_${l.id}" value="${l.breukdeel}" inputmode="decimal" required class="n"></td>
     <td><input name="naam_${l.id}" value="${esc(l.naam || "")}"></td><td><input type="email" name="email_${l.id}" value="${esc(l.email || "")}"></td>
     <td><select name="rol_${l.id}"><option${l.rol === "eigenaar" ? " selected" : ""}>eigenaar</option><option${l.rol === "bestuur" ? " selected" : ""}>bestuur</option></select></td></tr>`).join("")}</table></div>
   <p><button class="btn" type="submit">Wijzigingen opslaan</button></p></form>
-  <p style="font-size:.85rem;color:var(--muted)">Heeft een eigenaar al een account, dan verandert een nieuw e-mailadres hier niet zijn inlognaam. Appartementen verwijderen kan bij Leden (×).</p></div>`;
+  <p style="font-size:.85rem;color:var(--muted)">Heeft een eigenaar al een account, dan verandert een nieuw e-mailadres hier niet zijn inlognaam. ${cap(eN())} verwijderen kan bij Leden (×).</p></div>`;
 }
 
 function teken() {
@@ -366,7 +372,7 @@ function verwerkCsv(tekst) {
   S.import = regels; S.melding = `${regels.length} transacties gevonden. Controleer de posten en kies "Importeren".`; S.fout = ""; teken();
 }
 function importVoorbeeld(posten) {
-  return `<div class="tw voorbeeld-csv" style="margin-top:10px"><table class="lijst"><tr><th></th><th>Datum</th><th>Omschrijving</th><th>Post</th><th>App.</th><th class="n">Bedrag</th></tr>
+  return `<div class="tw voorbeeld-csv" style="margin-top:10px"><table class="lijst"><tr><th></th><th>Datum</th><th>Omschrijving</th><th>Post</th><th>${eK()}</th><th class="n">Bedrag</th></tr>
   ${S.import.map((r, i) => `<tr><td><input type="checkbox" data-actie="imp-mee" data-i="${i}" ${r.mee ? "checked" : ""}></td><td>${r.datum}</td><td>${esc(r.omschrijving)}${r.dubbel ? ' <span class="label let">al ingelezen</span>' : ""}</td>
   <td><select class="post" data-actie="imp-post" data-i="${i}">${posten.map((p) => `<option${p === r.post ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></td>
   <td><select class="post" data-actie="imp-app" data-i="${i}"><option value="">–</option>${S.leden.map((l) => `<option${l.appartement === r.appartement ? " selected" : ""}>${esc(l.appartement)}</option>`).join("")}</select></td><td class="n">${eur(r.bedrag)}</td></tr>`).join("")}</table></div>
@@ -399,19 +405,19 @@ app.addEventListener("submit", async (e) => {
     case "nieuwe-vve": {
       const { error } = await sb.rpc("maak_vve", { p_naam: d.naam, p_appartement: d.app.trim(), p_breukdeel: deel(d.deel) });
       if (error) return meld(error.message, true);
-      await laadVves(); S.tab = "leden"; return meld("VvE aangemaakt. Voeg nu de andere appartementen toe.");
+      await laadVves(); S.tab = "leden"; return meld(`VvE aangemaakt. Voeg nu de andere ${eN()} toe.`);
     }
-    case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), "Appartement toegevoegd.");
+    case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), `${cap(e1())} toegevoegd.`);
     case "appartementen": {
       const wijzig = [];
       for (const l of S.leden) {
         const n = { appartement: (d["app_" + l.id] || "").trim(), breukdeel: deel(d["deel_" + l.id]), naam: (d["naam_" + l.id] || "").trim() || null, email: (d["email_" + l.id] || "").trim() || null, rol: d["rol_" + l.id] };
-        if (!n.appartement) return meld("Elk appartement heeft een nummer of naam nodig.", true);
-        if (!(n.breukdeel > 0)) return meld(`Breukdeel bij app. ${n.appartement} moet groter dan 0 zijn.`, true);
+        if (!n.appartement) return meld(`Elk ${e1()} heeft een nummer of naam nodig.`, true);
+        if (!(n.breukdeel > 0)) return meld(`Breukdeel bij ${eK().toLowerCase()} ${n.appartement} moet groter dan 0 zijn.`, true);
         if (n.appartement !== l.appartement || n.breukdeel !== Number(l.breukdeel) || n.naam !== l.naam || n.email !== l.email || n.rol !== l.rol) wijzig.push([l, n]);
       }
       const nummers = S.leden.map((l) => (d["app_" + l.id] || "").trim());
-      if (new Set(nummers).size !== nummers.length) return meld("Twee appartementen hebben hetzelfde nummer.", true);
+      if (new Set(nummers).size !== nummers.length) return meld(`Twee ${eN()} hebben hetzelfde nummer.`, true);
       const blijftBestuur = S.leden.some((l) => l.user_id && d["rol_" + l.id] === "bestuur");
       if (!blijftBestuur) return meld("Er moet minstens één bestuurslid met een account overblijven.", true);
       if (!wijzig.length) return meld("Er was niets gewijzigd.");
@@ -420,7 +426,7 @@ app.addEventListener("submit", async (e) => {
       for (const [l] of hernoem) { const { error } = await sb.from("leden").update({ appartement: "~" + l.id }).eq("id", l.id); if (error) return meld("Opslaan lukte niet: " + error.message, true); }
       const fouten = (await Promise.all(wijzig.map(([l, n]) => sb.from("leden").update(n).eq("id", l.id)))).filter((r) => r.error);
       if (fouten.length) { await kiesVve(S.vve.id); return meld("Niet alles is opgeslagen: " + fouten[0].error.message, true); }
-      return opslaan(Promise.resolve({}), `${wijzig.length} appartement${wijzig.length === 1 ? "" : "en"} aangepast.`);
+      return opslaan(Promise.resolve({}), `${wijzig.length} ${wijzig.length === 1 ? e1() : eN()} aangepast.`);
     }
     case "reeks": {
       const van = parseInt(d.van), tot = parseInt(d.tot), bd = deel(d.deel);
@@ -429,8 +435,8 @@ app.addEventListener("submit", async (e) => {
       const bestaand = new Set(S.leden.map((l) => l.appartement));
       const rijen = [];
       for (let n = van; n <= tot; n++) if (!bestaand.has(String(n))) rijen.push({ vve_id, appartement: String(n), breukdeel: bd });
-      if (!rijen.length) return meld("Al deze appartementen bestaan al.");
-      return opslaan(sb.from("leden").insert(rijen), `${rijen.length} appartementen toegevoegd.`);
+      if (!rijen.length) return meld(`Al deze ${eN()} bestaan al.`);
+      return opslaan(sb.from("leden").insert(rijen), `${rijen.length} ${eN()} toegevoegd.`);
     }
     case "post": return opslaan(sb.from("begroting").insert({ vve_id, jaar: S.vve.boekjaar, post: d.post.trim(), bedrag: getal(d.bedrag) }), "Post toegevoegd.");
     case "mutatie": return opslaan(sb.from("mutaties").insert({ vve_id, datum: d.datum, omschrijving: d.oms, bedrag: getal(d.bedrag), post: d.post, appartement: d.app || null }), "Mutatie toegevoegd.");
@@ -439,7 +445,25 @@ app.addEventListener("submit", async (e) => {
     case "stemming": return opslaan(sb.from("stemmingen").insert({ vve_id, vergadering_id: f.dataset.id, voorstel: d.voorstel }), "Voorstel toegevoegd.");
     case "notities": return opslaan(sb.from("vergaderingen").update({ notities: d.notities }).eq("id", f.dataset.id), "Notities opgeslagen.");
     case "akkoord": return opslaan(sb.from("akkoorden").insert({ vve_id, titel: d.titel, uitleg: d.uitleg || "" }), "Punt toegevoegd.");
-    case "instellingen": return opslaan(sb.from("vves").update({ naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0 }).eq("id", vve_id), "Instellingen opgeslagen.");
+    case "instellingen": {
+      const aantal = parseInt(d.aantal);
+      if (!(aantal >= 1 && aantal <= 500)) return meld("Vul een aantal tussen 1 en 500 in.", true);
+      const verschil = aantal - S.leden.length;
+      if (verschil > 0) {
+        const bestaand = new Set(S.leden.map((l) => l.appartement)); const rijen = [];
+        for (let n = 1; rijen.length < verschil; n++) if (!bestaand.has(String(n))) rijen.push({ vve_id, appartement: String(n), breukdeel: 1 });
+        const { error } = await sb.from("leden").insert(rijen);
+        if (error) return meld("Toevoegen lukte niet: " + error.message, true);
+      } else if (verschil < 0) {
+        const weg = S.leden.filter((l) => !l.user_id && !l.email && !l.naam && /^\d+$/.test(l.appartement))
+          .sort((a, b) => Number(b.appartement) - Number(a.appartement)).slice(0, -verschil);
+        if (weg.length < -verschil) return meld(`Er zijn niet genoeg lege genummerde ${eN()} om weg te halen. Verwijder ze zelf bij Leden (×).`, true);
+        if (!confirm(`Deze ${eN()} worden verwijderd: ${weg.map((l) => l.appartement).join(", ")}. Doorgaan?`)) return;
+        const { error } = await sb.from("leden").delete().in("id", weg.map((l) => l.id));
+        if (error) return meld("Verwijderen lukte niet: " + error.message, true);
+      }
+      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0 }).eq("id", vve_id), "Instellingen opgeslagen.");
+    }
   }
 });
 
@@ -450,12 +474,12 @@ document.addEventListener("click", async (e) => {
   const a = t.dataset.actie;
   if (a === "uitloggen") { await sb.auth.signOut(); return; }
   if (a === "alle-een") {
-    if (!confirm(`Alle ${S.leden.length} appartementen krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
+    if (!confirm(`Alle ${S.leden.length} ${eN()} krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
     return opslaan(sb.from("leden").update({ breukdeel: 1 }).eq("vve_id", S.vve.id), "Alle breukdelen staan op 1.");
   }
   if (a === "wis-intrekken") return opslaan(sb.from("wisverzoeken").delete().eq("id", t.dataset.id), "Verzoek ingetrokken.");
   if (a === "wis-uitvoeren") {
-    if (!confirm("Naam en e-mail bij dit appartement wissen en het account verwijderen? Dit kan niet ongedaan worden.")) return;
+    if (!confirm(`Naam en e-mail bij dit ${e1()} wissen en het account verwijderen? Dit kan niet ongedaan worden.`)) return;
     return opslaan(sb.rpc("voer_wisverzoek_uit", { p_verzoek: t.dataset.id }), "Gegevens gewist en account verwijderd.");
   }
   if (a === "wis-afwijzen") {
@@ -468,11 +492,11 @@ document.addEventListener("click", async (e) => {
     const tekens = "abcdefghjkmnpqrstuvwxyz23456789";
     const r = crypto.getRandomValues(new Uint32Array(10));
     const ww = Array.from(r, (n, i) => tekens[n % tekens.length] + (i === 4 ? "-" : "")).join("");
-    if (!confirm(`Account maken voor app. ${l.appartement} (${l.email})?`)) return;
+    if (!confirm(`Account maken voor ${eK().toLowerCase()} ${l.appartement} (${l.email})?`)) return;
     const { error } = await sb.rpc("maak_account", { p_lid: l.id, p_wachtwoord: ww });
     if (error) return meld(error.message, true);
     await kiesVve(S.vve.id);
-    return meld(`Account gemaakt voor app. ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). De eigenaar kan het daarna wijzigen onder Mijn account.`);
+    return meld(`Account gemaakt voor ${eK().toLowerCase()} ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). De eigenaar kan het daarna wijzigen onder Mijn account.`);
   }
   if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
   if (a === "kies-vve") { await kiesVve(t.dataset.id); return teken(); }

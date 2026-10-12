@@ -247,3 +247,7 @@ begin
 end $$;
 revoke all on function public.voer_wisverzoek_uit(uuid, text) from public, anon;
 grant execute on function public.voer_wisverzoek_uit(uuid, text) to authenticated;
+
+-- Soort eenheid per VvE (appartementen, parkeerplaatsen, ...), alleen voor de teksten in het portaal.
+alter table public.vves add column eenheid text not null default 'appartement'
+  check (eenheid in ('appartement', 'parkeerplaats', 'bedrijfsruimte', 'berging', 'eenheid'));
