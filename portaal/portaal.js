@@ -252,7 +252,7 @@ function stemming(s) {
   const uit = voor + tegen;
   const res = !aanwezig ? "nog geen stemmen" : !uit ? "geen geldige stemmen" : voor > uit / 2 ? "aangenomen" : "verworpen";
   return `<div class="akkoord"><p><strong>${esc(s.voorstel)}</strong></p>
-  ${S.leden.map((l) => `<div class="stem"><strong>${eK()} ${esc(l.appartement)} <span style="font-weight:400;color:var(--muted)">(${nl(l.breukdeel)}/${nl(noemer())})</span></strong><div class="keus">
+  ${S.leden.map((l) => `<div class="stem"><strong>${eK()} ${esc(l.appartement)} <span style="font-weight:400;color:var(--muted)">(${nl(l.breukdeel)}/${nl(noemer)})</span></strong><div class="keus">
     ${["voor", "tegen", "blanco", "afwezig"].map((k) => `<button ${bestuur() ? "" : "disabled"} data-actie="stem" data-id="${s.id}" data-app="${esc(l.appartement)}" data-k="${k}" aria-pressed="${s.stemmen[l.appartement] === k}">${k}</button>`).join("")}</div></div>`).join("")}
   <p class="uitslag">Voor ${voor}, tegen ${tegen}, blanco ${blanco} (aanwezig ${aanwezig} van ${noemer}): <span class="${res === "aangenomen" ? "ok" : "let"}">${res}</span></p>
   <p style="font-size:.82rem;color:var(--muted)">Gewone meerderheid van de uitgebrachte stemmen. Welke meerderheid echt nodig is, staat in uw reglement.</p></div>`;
