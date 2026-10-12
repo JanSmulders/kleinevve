@@ -318,7 +318,7 @@ app.addEventListener("submit", async (e) => {
   switch (f.dataset.form) {
     case "inloggen": {
       const { error } = await sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + "/portaal/" } });
-      return error ? meld("Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
+      return error ? meld(/rate limit/i.test(error.message) ? "Er zijn net te veel inloglinks verstuurd. Probeer het over een uur opnieuw, of gebruik de laatste link die u al kreeg (als u die nog niet gebruikt heeft)." : "Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
     }
     case "nieuwe-vve": {
       const { error } = await sb.rpc("maak_vve", { p_naam: d.naam, p_appartement: d.app.trim(), p_breukdeel: getal(d.deel) });
