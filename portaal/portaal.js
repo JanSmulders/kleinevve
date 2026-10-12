@@ -381,6 +381,7 @@ if (sb) {
   const hashFout = new URLSearchParams(location.hash.slice(1)).get("error_description");
   if (hashFout) S.fout = "Inloggen lukte niet: " + hashFout + ". Vraag een nieuwe link aan.";
   sb.auth.onAuthStateChange((event, sessie) => {
+    if (event === "SIGNED_OUT") { S.melding = "U bent uitgelogd. Uw gegevens blijven bewaard. Wilt u weer inloggen, vraag dan hieronder een nieuwe inloglink aan."; S.fout = ""; }
     if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "SIGNED_OUT") setTimeout(() => start(sessie), 0);
   });
 } else teken();
