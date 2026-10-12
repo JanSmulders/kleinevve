@@ -11,4 +11,4 @@ MODEL = "claude-haiku-5-5"
 # Hoe diep het model nadenkt: low | medium | high. "low" is snel en zuinig.
 EFFORT = "low"
 # Alleen deze websites mogen Vera aanroepen.
-ALLOWED_ORIGINS = "https://vvekit.nl,https://www.vvekit.nl,https://test.vvekit.nl"
+ALLOWED_ORIGINS = "https://vvekit.nl,https://www.vvekit.nl,https://test.vvekit.nl,https://kleinevve.jansmulders1966.workers.dev"

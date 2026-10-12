@@ -88,14 +88,40 @@ function cleanMessages(input) {
   return out;
 }
 
+// Testomgeving: GET-verzoeken tonen de site uit de tak "test" van de (openbare) repo.
+// Zo is de testsite te zien op het workers.dev-adres zonder extra hosting of DNS.
+const TEST_BRON = "https://raw.githubusercontent.com/JanSmulders/kleinevve/test";
+const TYPES = {
+  html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8",
+  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
+  ico: "image/x-icon", xml: "application/xml", txt: "text/plain; charset=utf-8", json: "application/json",
+};
+
+async function testSite(url) {
+  let pad = decodeURIComponent(url.pathname);
+  if (pad.includes("..") || pad.startsWith("/worker/")) return new Response("Niet gevonden", { status: 404 });
+  if (pad.endsWith("/")) pad += "index.html";
+  let ext = (pad.split("/").pop().split(".")[1] || "").toLowerCase();
+  if (!ext) return Response.redirect(url.origin + pad + "/" + url.search, 301);
+  const type = TYPES[ext];
+  if (!type) return new Response("Niet gevonden", { status: 404 });
+  const bron = await fetch(TEST_BRON + pad, { cf: { cacheTtl: 30, cacheEverything: true } });
+  if (!bron.ok) return new Response("Niet gevonden op de testomgeving", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  return new Response(bron.body, {
+    headers: { "Content-Type": type, "Cache-Control": "no-cache", "X-Robots-Tag": "noindex, nofollow" },
+  });
+}
+
 export default {
   async fetch(request, env) {
+    if (request.method === "GET" || request.method === "HEAD") return testSite(new URL(request.url));
+
     const allowed = (env.ALLOWED_ORIGINS || "https://vvekit.nl").split(",").map((s) => s.trim());
     const origin = request.headers.get("Origin") || "";
     const headers = cors(origin, allowed);
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
-    if (request.method !== "POST") return json({ error: "Alleen POST." }, 405, headers);
+    if (request.method !== "POST") return json({ error: "Alleen GET en POST." }, 405, headers);
     if (!allowed.includes(origin)) return json({ error: "Niet toegestaan." }, 403, headers);
     if (!env.ANTHROPIC_API_KEY) return json({ error: "Nog niet ingesteld." }, 503, headers);
 
