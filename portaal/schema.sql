@@ -263,3 +263,44 @@ create policy "bestuur uploadt stukken" on storage.objects for insert to authent
   with check (bucket_id='stukken' and public.is_bestuur(public.vve_uit_pad(name)));
 create policy "bestuur verwijdert stukken" on storage.objects for delete to authenticated
   using (bucket_id='stukken' and public.is_bestuur(public.vve_uit_pad(name)));
+
+-- Migratie vve_beheer: een beheerder kan een VvE beheren zonder zelf eigenaar te zijn.
+-- Hij telt dan als bestuur (alle rechten), maar heeft geen eenheid, geen breukdeel en geen stem.
+create table public.vve_beheer (
+  vve_id uuid not null references public.vves on delete cascade,
+  user_id uuid not null references auth.users on delete cascade,
+  primary key (vve_id, user_id)
+);
+alter table public.vve_beheer enable row level security;
+create policy "eigen beheer lezen" on public.vve_beheer for select to authenticated using (user_id = auth.uid());
+grant select on public.vve_beheer to authenticated;
+
+create or replace function public.is_lid(v uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from leden where vve_id = v and user_id = auth.uid())
+      or exists (select 1 from vve_beheer where vve_id = v and user_id = auth.uid());
+$$;
+
+create or replace function public.is_bestuur(v uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from leden where vve_id = v and user_id = auth.uid() and rol = 'bestuur')
+      or exists (select 1 from vve_beheer where vve_id = v and user_id = auth.uid());
+$$;
+
+-- Nieuwe VvE: alleen voor beheerders. Met een eenheid wordt de maker daar bestuurder van;
+-- zonder eenheid (leeg) wordt hij alleen beheerder van de VvE.
+create or replace function public.maak_vve(p_naam text, p_appartement text, p_breukdeel numeric)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v uuid;
+begin
+  if not ben_beheerder() then raise exception 'Alleen beheerders kunnen een VvE aanmaken'; end if;
+  if coalesce(trim(p_naam), '') = '' then raise exception 'Geef de VvE een naam'; end if;
+  insert into vves (naam) values (trim(p_naam)) returning id into v;
+  if coalesce(trim(p_appartement), '') = '' then
+    insert into vve_beheer (vve_id, user_id) values (v, auth.uid());
+  else
+    insert into leden (vve_id, appartement, breukdeel, email, user_id, rol)
+    values (v, trim(p_appartement), coalesce(p_breukdeel, 1), auth.email(), auth.uid(), 'bestuur');
+  end if;
+  return v;
+end $$;

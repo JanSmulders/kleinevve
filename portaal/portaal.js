@@ -34,7 +34,8 @@ const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige verga
 // ---------- toestand ----------
 const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], stukken: [], vera: {}, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
-const bestuur = () => ik()?.rol === "bestuur";
+const beheert = () => (S.beheer || []).includes(S.vve?.id); // beheerder zonder eigen eenheid
+const bestuur = () => ik()?.rol === "bestuur" || beheert();
 
 function meld(tekst, fout = false) { S.melding = fout ? "" : tekst; S.fout = fout ? tekst : ""; teken(); }
 
@@ -85,6 +86,8 @@ async function laadVves() {
   const { data, error } = await sb.from("vves").select("*").order("naam");
   if (error) throw error;
   S.vves = data;
+  const beheer = await sb.from("vve_beheer").select("vve_id"); // ontbreekt de tabel nog, dan geen beheer
+  S.beheer = beheer.error ? [] : beheer.data.map((r) => r.vve_id);
   if (!S.vve && data.length) await kiesVve(data[0].id);
 }
 async function kiesVve(id) {
@@ -152,22 +155,27 @@ function account() {
   <p style="margin-top:20px"><button class="linkknop" data-tab="overzicht">${S.vve ? "Terug naar het portaal" : "Terug"}</button></p></div>`;
 }
 
+function nieuweVveForm() {
+  return `<form class="formulier" data-form="nieuwe-vve"><label>Naam van de VvE<input name="naam" required placeholder="VvE Voorbeeldstraat 12"></label>
+  <label style="display:flex;gap:.5em;align-items:center"><input type="checkbox" name="eigen" style="width:auto" data-actie="eigen-eenheid"${S.eigenEenheid ? " checked" : ""}> Ik ben zelf eigenaar in deze VvE</label>
+  ${S.eigenEenheid ? `<label>Uw eenheid (nummer)<input name="app" required placeholder="bijv. 1 of 12-A"></label>
+  <label>Breukdeel van uw eenheid<input name="deel" inputmode="decimal" value="1"></label>
+  <p style="font-size:.85rem;color:var(--muted);margin:0">Zijn alle eenheden gelijk? Laat dan 1 staan. Staat in de splitsingsakte iets als 12/1000, vul dan 12 in.</p>`
+  : `<p style="font-size:.85rem;color:var(--muted);margin:0">U wordt beheerder: u kunt alles instellen, maar heeft geen eigen eenheid, breukdeel of stem.</p>`}
+  <button class="btn" type="submit">VvE aanmaken</button>${S.vve ? ` <button class="klein-knop" type="button" data-actie="nieuwe-vve-dicht">Annuleren</button>` : ""}</form>`;
+}
 function geenVve(beheerder) {
   return `<div class="inlog kaart"><h1 style="font-size:1.5rem;margin-top:0">Welkom</h1>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}
-  ${beheerder ? `<p>U heeft nog geen VvE. Maak er een aan; u wordt dan bestuurder van uw eigen ${e1()}.</p>
-  <form class="formulier" data-form="nieuwe-vve"><label>Naam van de VvE<input name="naam" required placeholder="VvE Voorbeeldstraat 12"></label>
-  <label>Uw ${e1()}<input name="app" required placeholder="bijv. 1 of 12-A"></label>
-  <label>Breukdeel van uw ${e1()}<input name="deel" inputmode="decimal" value="1"></label>
-  <p style="font-size:.85rem;color:var(--muted);margin:0">Zijn alle ${eN()} gelijk? Laat dan 1 staan; bij 32 ${eN()} wordt dat vanzelf 1/32. Staat in de splitsingsakte iets als 12/1000, vul dan 12 in.</p>
-  <button class="btn" type="submit">VvE aanmaken</button></form>`
+  ${beheerder ? `<p>U heeft nog geen VvE. Maak er een aan.</p>${nieuweVveForm()}`
   : `<p>Uw e-mailadres (${esc(S.sessie.user.email)}) staat nog bij geen enkele VvE. Vraag het bestuur van uw VvE om uw e-mailadres bij uw ${e1()} te zetten, en log daarna opnieuw in.</p>`}</div>`;
 }
 
 function kop(c) {
   return `<section class="kop"><div><p class="pill">VvE-portaal${bestuur() ? " · bestuur" : ""}</p><h1>${esc(S.vve.naam)}</h1>
-  <p class="sub">${S.leden.length} ${eN()} · boekjaar ${c.jaar} · u bent ${eK().toLowerCase()} ${esc(ik()?.appartement)}</p>
-  ${S.vves.length > 1 ? `<div class="vve-kies">${S.vves.map((v) => `<button class="chip" data-actie="kies-vve" data-id="${v.id}">${esc(v.naam)}</button>`).join("")}</div>` : ""}</div>
+  <p class="sub">${S.leden.length} ${eN()} · boekjaar ${c.jaar} · ${ik() ? `u bent ${eK().toLowerCase()} ${esc(ik().appartement)}` : beheert() ? "u bent beheerder" : ""}</p>
+  ${S.vves.length > 1 || S.beheerder ? `<div class="vve-kies">${S.vves.length > 1 ? S.vves.map((v) => `<button class="chip" data-actie="kies-vve" data-id="${v.id}"${v.id === S.vve.id ? ' aria-current="true" style="font-weight:700"' : ""}>${esc(v.naam)}</button>`).join("") : ""}${S.beheerder ? `<button class="chip" data-actie="nieuwe-vve-open">+ Nieuwe VvE</button>` : ""}</div>` : ""}
+  ${S.nieuweVve ? `<div class="kaart" style="margin-top:14px;max-width:520px"><h2>Nieuwe VvE</h2>${nieuweVveForm()}</div>` : ""}</div>
   <div class="kop-vera"><img src="/img/vera.svg" alt="" width="44" height="44"><div><strong>Vera <span class="ai-label">AI</span></strong><span>Controleert de cijfers bij elk bezoek.</span></div></div></section>
   <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "stukken", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}${S.melding ? `<div class="melding">${esc(S.melding)}</div>` : ""}`;
@@ -528,9 +536,12 @@ app.addEventListener("submit", async (e) => {
       return error ? meld(/rate limit/i.test(error.message) ? "Er zijn net te veel inloglinks verstuurd. Probeer het over een uur opnieuw, of gebruik de laatste link die u al kreeg (als u die nog niet gebruikt heeft)." : "Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
     }
     case "nieuwe-vve": {
-      const { error } = await sb.rpc("maak_vve", { p_naam: d.naam, p_appartement: d.app.trim(), p_breukdeel: deel(d.deel) });
+      const eigen = !!d.eigen;
+      const { data: id, error } = await sb.rpc("maak_vve", { p_naam: d.naam, p_appartement: eigen ? d.app.trim() : "", p_breukdeel: eigen ? deel(d.deel) : 1 });
       if (error) return meld(error.message, true);
-      await laadVves(); S.tab = "leden"; return meld(`VvE aangemaakt. Voeg nu de andere ${eN()} toe.`);
+      S.nieuweVve = false; S.eigenEenheid = false;
+      await laadVves(); await kiesVve(id); S.tab = "instellingen";
+      return meld(`VvE "${d.naam}" aangemaakt. Kies hier de soort en het aantal eenheden; daarna kunt u bij Stukken de akte uploaden en Vera de gegevens laten invullen.`);
     }
     case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), `${cap(e1())} toegevoegd.`);
     case "appartementen": {
@@ -543,7 +554,7 @@ app.addEventListener("submit", async (e) => {
       }
       const nummers = S.leden.map((l) => (d["app_" + l.id] || "").trim());
       if (new Set(nummers).size !== nummers.length) return meld(`Twee ${eN()} hebben hetzelfde nummer.`, true);
-      const blijftBestuur = S.leden.some((l) => l.user_id && d["rol_" + l.id] === "bestuur");
+      const blijftBestuur = beheert() || S.leden.some((l) => l.user_id && d["rol_" + l.id] === "bestuur");
       if (!blijftBestuur) return meld("Er moet minstens één bestuurslid met een account overblijven.", true);
       if (!wijzig.length) return meld("Er was niets gewijzigd.");
       // Eerst tijdelijke nummers, zodat omwisselen (bijv. 1 en 2) niet botst op de unieke nummering.
@@ -602,6 +613,8 @@ document.addEventListener("click", async (e) => {
     if (!confirm(`Alle ${S.leden.length} ${eN()} krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
     return opslaan(sb.from("leden").update({ breukdeel: 1 }).eq("vve_id", S.vve.id), "Alle breukdelen staan op 1.");
   }
+  if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
+  if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
   if (a === "voorstel-weg") { S.voorstel = null; return teken(); }
   if (a === "invullen") {
     S.invulBezig = true; S.voorstel = null; S.fout = S.melding = ""; teken();
@@ -643,7 +656,7 @@ document.addEventListener("click", async (e) => {
     return meld(`Account gemaakt voor ${eK().toLowerCase()} ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). De eigenaar kan het daarna wijzigen onder Mijn account.`);
   }
   if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
-  if (a === "kies-vve") { await kiesVve(t.dataset.id); return teken(); }
+  if (a === "kies-vve") { S.voorstel = null; S.nieuweVve = false; S.melding = S.fout = ""; await kiesVve(t.dataset.id); return teken(); }
   if (a === "weg" && confirm("Weet u het zeker? Dit kan niet ongedaan worden.")) return opslaan(sb.from(t.dataset.tabel).delete().eq("id", t.dataset.id), "Verwijderd.");
   if (a === "akkoord") return opslaan(sb.from("akkoorden").update({ status: t.dataset.status, besloten_door: S.sessie.user.id, besloten_op: new Date().toISOString() }).eq("id", t.dataset.id), "Besluit vastgelegd.");
   if (a === "stem" && bestuur()) {
@@ -660,6 +673,7 @@ document.addEventListener("click", async (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target, a = t.dataset.actie;
   if (a === "vera-kies") { S.veraStuk = t.value; return teken(); }
+  if (a === "eigen-eenheid") { S.eigenEenheid = t.checked; const naam = t.form.naam.value; teken(); const f = app.querySelector("form[data-form=nieuwe-vve]"); if (f) f.naam.value = naam; return; }
   if (a === "post") opslaan(sb.from("mutaties").update({ post: t.value }).eq("id", t.dataset.id), "Post aangepast.");
   if (a === "stuk-upload" && t.files[0]) {
     const f = t.files[0];
@@ -683,7 +697,7 @@ async function start(sessie) {
   if (sessie) {
     try {
       await laadVves();
-      if (!S.vve) { const { data } = await sb.rpc("ben_beheerder"); S.beheerder = !!data; }
+      const { data } = await sb.rpc("ben_beheerder"); S.beheerder = !!data;
     } catch (err) { S.fout = "Laden lukte niet: " + err.message; }
   }
   teken();
