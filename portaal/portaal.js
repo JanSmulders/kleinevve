@@ -23,7 +23,7 @@ const vandaag = () => new Date().toISOString().slice(0, 10);
 const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige vergadering", "Jaarrekening en decharge bestuur", "Begroting en voorschotten", "Reservefonds en MJOP", "Besluiten over onderhoud", "Benoeming bestuur en kascommissie", "Rondvraag en sluiting"];
 
 // ---------- toestand ----------
-const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
+const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const bestuur = () => ik()?.rol === "bestuur";
 
@@ -64,6 +64,7 @@ function aandachtspunten(c) {
   for (const b of c.posten) { const w = c.werkelijk(b.post); if (w > Number(b.bedrag) && Number(b.bedrag) > 0) p.push(["let", `${esc(b.post)}: ${eur0(w)} uitgegeven, begroot ${eur0(b.bedrag)}.`]); }
   const ditJaar = S.vergaderingen.some((v) => v.datum.startsWith(String(c.jaar)) || v.datum.startsWith(String(c.jaar + 1)));
   if (!ditJaar) p.push(["let", "Er staat nog geen ledenvergadering gepland. Een VvE moet minstens één keer per jaar vergaderen."]);
+  for (const w of S.wisverzoeken) if (w.status === "open" && bestuur()) p.push(["let", `App. ${esc(w.appartement)} vraagt om wissen van persoonsgegevens (zie Leden). Handel dit binnen een maand af.`]);
   if (!S.leden.some((l) => l.email)) p.push(["let", "Nog geen e-mailadressen bij de appartementen: eigenaren kunnen dan nog niet inloggen."]);
   if (!p.length) p.push(["ok", "Alles op orde: geen achterstanden, geen onderhoud binnen 2 jaar, vergadering gepland."]);
   return p;
@@ -79,13 +80,13 @@ async function laadVves() {
 }
 async function kiesVve(id) {
   const q = (t) => sb.from(t).select("*").eq("vve_id", id);
-  const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden] = await Promise.all([
+  const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken] = await Promise.all([
     sb.from("vves").select("*").eq("id", id).single(), q("leden").order("appartement"), q("begroting").order("post"),
     q("mutaties").order("datum", { ascending: false }), q("mjop").order("laatst"), q("vergaderingen").order("datum", { ascending: false }),
-    q("stemmingen"), q("akkoorden").order("aangemaakt", { ascending: false }),
+    q("stemmingen"), q("akkoorden").order("aangemaakt", { ascending: false }), q("wisverzoeken").order("aangemaakt", { ascending: false }),
   ]);
-  for (const r of [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden]) if (r.error) throw r.error;
-  Object.assign(S, { vve: vve.data, leden: leden.data, begroting: begroting.data, mutaties: mutaties.data, mjop: mjop.data, vergaderingen: vergaderingen.data, stemmingen: stemmingen.data, akkoorden: akkoorden.data });
+  for (const r of [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken]) if (r.error) throw r.error;
+  Object.assign(S, { vve: vve.data, leden: leden.data, begroting: begroting.data, mutaties: mutaties.data, mjop: mjop.data, vergaderingen: vergaderingen.data, stemmingen: stemmingen.data, akkoorden: akkoorden.data, wisverzoeken: wisverzoeken.data });
 }
 async function opslaan(belofte, ok) {
   const { error } = await belofte;
@@ -110,11 +111,28 @@ function inlogScherm() {
 }
 
 function account() {
-  return `<div class="kaart inlog" style="margin:0 auto"><h2 style="margin-top:0">Mijn account</h2>
-  <p style="color:var(--muted)">Ingelogd als ${esc(S.sessie.user.email)}. Met een wachtwoord logt u voortaan in zonder e-maillink.</p>
+  const u = S.sessie.user;
+  const mijn = S.leden.filter((l) => l.user_id === u.id);
+  const verzoek = S.wisverzoeken.find((w) => w.user_id === u.id && w.status === "open");
+  const afgewezen = S.wisverzoeken.filter((w) => w.user_id === u.id && w.status === "afgewezen");
+  return `<div class="kaart inlog" style="margin:0 auto;max-width:34rem"><h2 style="margin-top:0">Mijn account</h2>
+  <h3>Wachtwoord</h3>
+  <p style="color:var(--muted);font-size:.92rem">Met een wachtwoord logt u in zonder e-maillink.</p>
   <form class="formulier" data-form="wachtwoord"><label>Nieuw wachtwoord (minstens 8 tekens)<input type="password" name="ww" required minlength="8" autocomplete="new-password"></label>
   <label>Nog een keer<input type="password" name="ww2" required minlength="8" autocomplete="new-password"></label><button class="btn" type="submit">Wachtwoord opslaan</button></form>
-  ${S.vve ? `<p><button class="linkknop" data-tab="overzicht">Terug naar het portaal</button></p>` : `<p><button class="linkknop" data-tab="overzicht">Terug</button></p>`}</div>`;
+
+  <h3 style="margin-top:28px">Mijn gegevens (AVG)</h3>
+  <p style="color:var(--muted);font-size:.92rem">Dit staat over u in het portaal. <a href="privacy.html" target="_blank" rel="noopener">Lees de privacyverklaring</a>.</p>
+  <table class="lijst"><tr><th>E-mailadres (inloggen)</th><td>${esc(u.email)}</td></tr><tr><th>Account sinds</th><td>${new Date(u.created_at).toLocaleDateString("nl-NL")}</td></tr>
+  ${mijn.map((l) => `<tr><th>${esc(S.vve?.naam || "VvE")}</th><td>App. ${esc(l.appartement)} (breukdeel ${l.breukdeel}), rol ${l.rol}${l.naam ? `, naam ${esc(l.naam)}` : ""}</td></tr>`).join("")}</table>
+  <p style="font-size:.85rem;color:var(--muted)">Betalingen van uw appartement staan in de boekhouding van de VvE. Die moet de VvE 7 jaar bewaren; die worden dus niet gewist.</p>
+  ${afgewezen.map((w) => `<div class="melding fout">Uw verzoek van ${new Date(w.aangemaakt).toLocaleDateString("nl-NL")} is afgewezen${w.notitie ? `: ${esc(w.notitie)}` : "."}</div>`).join("")}
+  ${!mijn.length ? "" : verzoek
+    ? `<div class="melding">U heeft op ${new Date(verzoek.aangemaakt).toLocaleDateString("nl-NL")} gevraagd om uw gegevens te wissen. Het bestuur handelt dit af.</div><p><button class="klein-knop" data-actie="wis-intrekken" data-id="${verzoek.id}">Verzoek intrekken</button></p>`
+    : `<details class="blok"><summary>Mijn gegevens laten wissen</summary>
+      <p style="font-size:.9rem">Het bestuur wist dan uw naam en e-mailadres bij het appartement en verwijdert uw account. U kunt daarna niet meer inloggen. Het appartement en de boekhouding blijven bestaan.</p>
+      <form class="formulier" data-form="wisverzoek" data-lid="${mijn[0].id}"><label>Reden (mag leeg blijven)<input name="reden"></label><button class="btn" type="submit">Verzoek indienen</button></form></details>`}
+  <p style="margin-top:20px"><button class="linkknop" data-tab="overzicht">${S.vve ? "Terug naar het portaal" : "Terug"}</button></p></div>`;
 }
 
 function geenVve(beheerder) {
@@ -222,8 +240,17 @@ function stemming(s) {
   <p style="font-size:.82rem;color:var(--muted)">Gewone meerderheid van de uitgebrachte stemmen. Welke meerderheid echt nodig is, staat in uw reglement.</p></div>`;
 }
 
+function wisverzoekenBestuur() {
+  const open = S.wisverzoeken.filter((w) => w.status === "open");
+  if (!bestuur() || !open.length) return "";
+  return `<div class="kaart" style="margin-bottom:20px;border-left:4px solid #d97706"><h2>Verzoeken om gegevens te wissen (${open.length})</h2>
+  <p style="font-size:.9rem;color:var(--muted);margin-top:0">Een eigenaar mag vragen om zijn persoonsgegevens te wissen (AVG). Handel dit binnen een maand af. Wissen haalt naam en e-mail bij het appartement weg en verwijdert het account; breukdeel en boekhouding blijven.</p>
+  ${open.map((w) => `<div class="akkoord"><p><strong>App. ${esc(w.appartement)}</strong> · ${new Date(w.aangemaakt).toLocaleDateString("nl-NL")}</p>${w.reden ? `<p class="uitleg">Reden: ${esc(w.reden)}</p>` : ""}
+    <div class="knoppen"><button class="btn" data-actie="wis-uitvoeren" data-id="${w.id}">Gegevens wissen</button><button class="btn ghost" data-actie="wis-afwijzen" data-id="${w.id}">Afwijzen</button></div></div>`).join("")}</div>`;
+}
+
 function leden() {
-  return `<div class="kaart"><h2>Appartementen en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
+  return `${wisverzoekenBestuur()}<div class="kaart"><h2>Appartementen en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>App.</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
   ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${l.breukdeel}</td><td>${esc(l.naam || "")}</td><td>${esc(l.email || "")}</td><td>${l.rol}</td><td>${l.user_id ? "ja" : bestuur() && l.email ? `<button class="klein-knop" data-actie="account-maken" data-id="${l.id}">Account maken</button>` : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
   ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met "Account maken" krijgt de eigenaar een startwachtwoord dat u persoonlijk doorgeeft. Hij of zij kan dan alles van de VvE inzien, maar niets wijzigen (behalve als rol "bestuur").</p>
   <form class="formulier rij" data-form="lid"><label>Appartement<input name="app" required></label><label>Breukdeel<input name="deel" required inputmode="decimal"></label><label>Naam<input name="naam"></label><label>E-mail<input type="email" name="email"></label><label>Rol<select name="rol"><option>eigenaar</option><option>bestuur</option></select></label><button class="btn" type="submit">Toevoegen</button></form>` : ""}</div>`;
@@ -341,6 +368,10 @@ app.addEventListener("submit", async (e) => {
       const { error } = await sb.auth.updateUser({ password: d.ww });
       return error ? meld("Opslaan lukte niet: " + error.message, true) : meld("Wachtwoord opgeslagen. Voortaan logt u in met uw e-mailadres en dit wachtwoord.");
     }
+    case "wisverzoek": {
+      const l = S.leden.find((x) => x.id === f.dataset.lid);
+      return opslaan(sb.from("wisverzoeken").insert({ vve_id: l.vve_id, lid_id: l.id, user_id: S.sessie.user.id, appartement: l.appartement, reden: (d.reden || "").trim() }), "Uw verzoek is ingediend. Het bestuur handelt het af.");
+    }
     case "inloglink": {
       const { error } = await sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + "/portaal/" } });
       return error ? meld(/rate limit/i.test(error.message) ? "Er zijn net te veel inloglinks verstuurd. Probeer het over een uur opnieuw, of gebruik de laatste link die u al kreeg (als u die nog niet gebruikt heeft)." : "Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
@@ -368,6 +399,16 @@ document.addEventListener("click", async (e) => {
   if (t.dataset.tab) { S.tab = t.dataset.tab; S.melding = S.fout = ""; return teken(); }
   const a = t.dataset.actie;
   if (a === "uitloggen") { await sb.auth.signOut(); return; }
+  if (a === "wis-intrekken") return opslaan(sb.from("wisverzoeken").delete().eq("id", t.dataset.id), "Verzoek ingetrokken.");
+  if (a === "wis-uitvoeren") {
+    if (!confirm("Naam en e-mail bij dit appartement wissen en het account verwijderen? Dit kan niet ongedaan worden.")) return;
+    return opslaan(sb.rpc("voer_wisverzoek_uit", { p_verzoek: t.dataset.id }), "Gegevens gewist en account verwijderd.");
+  }
+  if (a === "wis-afwijzen") {
+    const notitie = prompt("Waarom wijst u het verzoek af? De eigenaar ziet deze uitleg.");
+    if (notitie === null) return;
+    return opslaan(sb.from("wisverzoeken").update({ status: "afgewezen", notitie, besloten_op: new Date().toISOString() }).eq("id", t.dataset.id), "Verzoek afgewezen.");
+  }
   if (a === "account-maken") {
     const l = S.leden.find((x) => x.id === t.dataset.id);
     const tekens = "abcdefghjkmnpqrstuvwxyz23456789";

@@ -201,3 +201,49 @@ begin
 end $$;
 revoke all on function public.maak_account(uuid, text) from public, anon;
 grant execute on function public.maak_account(uuid, text) to authenticated;
+
+-- AVG: een eigenaar vraagt om wissen van zijn persoonsgegevens; het bestuur handelt af (zoals in portaal JdeS).
+create table public.wisverzoeken (
+  id uuid primary key default gen_random_uuid(),
+  vve_id uuid not null references public.vves on delete cascade,
+  lid_id uuid references public.leden on delete set null,
+  user_id uuid references auth.users on delete set null,
+  appartement text not null,
+  reden text not null default '',
+  status text not null default 'open' check (status in ('open', 'afgehandeld', 'afgewezen')),
+  notitie text not null default '',
+  aangemaakt timestamptz not null default now(),
+  besloten_op timestamptz
+);
+alter table public.wisverzoeken enable row level security;
+create policy "eigen verzoek of bestuur leest" on public.wisverzoeken for select to authenticated
+  using (user_id = auth.uid() or is_bestuur(vve_id));
+create policy "eigenaar dient eigen verzoek in" on public.wisverzoeken for insert to authenticated
+  with check (user_id = auth.uid() and status = 'open'
+    and exists (select 1 from public.leden l where l.id = lid_id and l.user_id = auth.uid() and l.vve_id = wisverzoeken.vve_id));
+create policy "eigenaar trekt open verzoek in" on public.wisverzoeken for delete to authenticated
+  using (user_id = auth.uid() and status = 'open');
+create policy "bestuur wijst af" on public.wisverzoeken for update to authenticated
+  using (is_bestuur(vve_id)) with check (is_bestuur(vve_id));
+
+-- Bestuur voert een verzoek uit: naam en e-mail leeg, koppeling los, account weg als het nergens anders bij hoort.
+-- Appartement (breukdeel) en boekhouding blijven: een VvE moet haar administratie 7 jaar bewaren.
+create or replace function public.voer_wisverzoek_uit(p_verzoek uuid, p_notitie text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare v record; l record;
+begin
+  select * into v from wisverzoeken where id = p_verzoek;
+  if v is null or v.status <> 'open' then raise exception 'Verzoek niet gevonden of al afgehandeld'; end if;
+  if not is_bestuur(v.vve_id) then raise exception 'Alleen het bestuur kan verzoeken afhandelen'; end if;
+  select * into l from leden where id = v.lid_id;
+  if l.rol = 'bestuur' and not exists (select 1 from leden where vve_id = v.vve_id and rol = 'bestuur' and user_id is not null and id <> l.id) then
+    raise exception 'Dit is het enige bestuurslid. Wijs eerst een ander bestuurslid aan.';
+  end if;
+  update leden set naam = null, email = null, user_id = null, rol = 'eigenaar' where id = v.lid_id;
+  update wisverzoeken set status = 'afgehandeld', notitie = coalesce(p_notitie, ''), besloten_op = now(), reden = '' where id = p_verzoek;
+  if v.user_id is not null and not exists (select 1 from leden where user_id = v.user_id) then
+    delete from auth.users where id = v.user_id;
+  end if;
+end $$;
+revoke all on function public.voer_wisverzoek_uit(uuid, text) from public, anon;
+grant execute on function public.voer_wisverzoek_uit(uuid, text) to authenticated;
