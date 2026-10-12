@@ -148,3 +148,10 @@ section.blok h2{margin-top:0;font-size:clamp(1.5rem,3vw,1.9rem)}
   .vera-knop{padding:6px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+/* Inlogknop in de kopbalk */
+header.site nav{margin-left:auto}
+a.inlog-knop{background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:.93rem;padding:6px 14px;border-radius:999px;white-space:nowrap}
+a.inlog-knop:hover{filter:brightness(1.1)}
+@media (prefers-color-scheme:dark){a.inlog-knop{color:#0f1a16}}
+@media (max-width:820px){header.site nav{order:3;flex-basis:100%;margin-left:0}a.inlog-knop{order:2}}
