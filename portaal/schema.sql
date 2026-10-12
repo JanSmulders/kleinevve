@@ -251,3 +251,15 @@ grant execute on function public.voer_wisverzoek_uit(uuid, text) to authenticate
 -- Soort eenheid per VvE (appartementen, parkeerplaatsen, ...), alleen voor de teksten in het portaal.
 alter table public.vves add column eenheid text not null default 'appartement'
   check (eenheid in ('appartement', 'parkeerplaats', 'bedrijfsruimte', 'berging', 'eenheid'));
+
+-- Migratie stukken_opslag: privé-bucket voor stukken (pdf, max 20 MB). Map = vve_id; leden lezen, bestuur uploadt en verwijdert.
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+  values ('stukken','stukken',false,20971520,array['application/pdf']) on conflict (id) do nothing;
+create or replace function public.vve_uit_pad(pad text) returns uuid language plpgsql immutable as $$
+  begin return split_part(pad,'/',1)::uuid; exception when others then return null; end $$;
+create policy "leden lezen stukken" on storage.objects for select to authenticated
+  using (bucket_id='stukken' and public.is_lid(public.vve_uit_pad(name)));
+create policy "bestuur uploadt stukken" on storage.objects for insert to authenticated
+  with check (bucket_id='stukken' and public.is_bestuur(public.vve_uit_pad(name)));
+create policy "bestuur verwijdert stukken" on storage.objects for delete to authenticated
+  using (bucket_id='stukken' and public.is_bestuur(public.vve_uit_pad(name)));

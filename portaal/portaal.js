@@ -5,6 +5,7 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const SUPABASE_URL = "https://nevkccqxidibpthxowyh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_vP7uUh1wM9WoTkShwNsEWg_8ikU4UlC"; // publishable key: mag openbaar, de database-regels beschermen de gegevens
 
+const VERA_API = "https://kleinevve.jansmulders1966.workers.dev"; // dezelfde Worker als Vera op de website
 const app = document.getElementById("app");
 const wie = document.getElementById("wie");
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
@@ -31,7 +32,7 @@ const vandaag = () => new Date().toISOString().slice(0, 10);
 const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige vergadering", "Jaarrekening en decharge bestuur", "Begroting en voorschotten", "Reservefonds en MJOP", "Besluiten over onderhoud", "Benoeming bestuur en kascommissie", "Rondvraag en sluiting"];
 
 // ---------- toestand ----------
-const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
+const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], stukken: [], vera: {}, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const bestuur = () => ik()?.rol === "bestuur";
 
@@ -96,6 +97,13 @@ async function kiesVve(id) {
   for (const r of [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken]) if (r.error) throw r.error;
   Object.assign(S, { vve: vve.data, leden: leden.data, begroting: begroting.data, mutaties: mutaties.data, mjop: mjop.data, vergaderingen: vergaderingen.data, stemmingen: stemmingen.data, akkoorden: akkoorden.data, wisverzoeken: wisverzoeken.data });
   S.leden.sort((a, b) => a.appartement.localeCompare(b.appartement, "nl", { numeric: true }));
+  await laadStukken();
+}
+async function laadStukken() {
+  const { data } = await sb.storage.from("stukken").list(S.vve.id, { sortBy: { column: "created_at", order: "desc" } });
+  const lijst = (data || []).filter((f) => f.name && !f.name.startsWith("."));
+  const { data: urls } = lijst.length ? await sb.storage.from("stukken").createSignedUrls(lijst.map((f) => `${S.vve.id}/${f.name}`), 3600) : { data: [] };
+  S.stukken = lijst.map((f, i) => ({ naam: f.name, pad: `${S.vve.id}/${f.name}`, grootte: f.metadata?.size || 0, datum: f.created_at, url: urls?.[i]?.signedUrl }));
 }
 async function opslaan(belofte, ok) {
   const { error } = await belofte;
@@ -161,7 +169,7 @@ function kop(c) {
   <p class="sub">${S.leden.length} ${eN()} · boekjaar ${c.jaar} · u bent ${eK().toLowerCase()} ${esc(ik()?.appartement)}</p>
   ${S.vves.length > 1 ? `<div class="vve-kies">${S.vves.map((v) => `<button class="chip" data-actie="kies-vve" data-id="${v.id}">${esc(v.naam)}</button>`).join("")}</div>` : ""}</div>
   <div class="kop-vera"><img src="/img/vera.svg" alt="" width="44" height="44"><div><strong>Vera <span class="ai-label">AI</span></strong><span>Controleert de cijfers bij elk bezoek.</span></div></div></section>
-  <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
+  <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "stukken", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}${S.melding ? `<div class="melding">${esc(S.melding)}</div>` : ""}`;
 }
 
@@ -271,6 +279,32 @@ function leden() {
   <form class="formulier rij" data-form="lid"><label>${cap(e1())}<input name="app" required></label><label>Breukdeel<input name="deel" inputmode="decimal" value="1"></label><label>Naam<input name="naam"></label><label>E-mail<input type="email" name="email"></label><label>Rol<select name="rol"><option>eigenaar</option><option>bestuur</option></select></label><button class="btn" type="submit">Toevoegen</button></form>` : ""}</div>`;
 }
 
+// Eenvoudige opmaak voor Vera's antwoord: veilig escapen, **vet** en regels.
+const opmaak = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+function stukken() {
+  const kb = (n) => n > 1048576 ? (n / 1048576).toLocaleString("nl-NL", { maximumFractionDigits: 1 }) + " MB" : Math.round(n / 1024) + " kB";
+  const gekozen = S.veraStuk && S.stukken.some((x) => x.pad === S.veraStuk) ? S.veraStuk : S.stukken[0]?.pad;
+  const log = S.vera[gekozen] || [];
+  return `<div class="twee">
+  <div class="kaart"><h2>Stukken van de VvE</h2>
+    <p style="margin-top:0;color:var(--muted);font-size:.9rem">Splitsingsakte, reglement, notulen, polissen. Alleen leden van deze VvE kunnen ze openen.</p>
+    <div class="tw"><table class="lijst"><tr><th>Stuk</th><th class="n">Grootte</th><th></th></tr>
+    ${S.stukken.map((f) => `<tr><td><a href="${esc(f.url || "#")}" target="_blank" rel="noopener">${esc(f.naam)}</a></td><td class="n">${kb(f.grootte)}</td><td>${bestuur() ? `<button class="klein-knop" data-actie="stuk-weg" data-pad="${esc(f.pad)}">×</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted)">Nog geen stukken.</td></tr>`}</table></div>
+    ${bestuur() ? `<details class="blok" ${S.stukken.length ? "" : "open"}><summary>Stuk uploaden (PDF)</summary>
+      <p style="font-size:.88rem;color:var(--muted)">Alleen PDF, tot 20 MB. Upload alleen stukken die alle leden mogen zien.</p>
+      <input type="file" accept="application/pdf,.pdf" data-actie="stuk-upload"></details>` : ""}
+  </div>
+  <div class="kaart"><h2>Vraag Vera over een stuk <span class="ai-label">AI</span></h2>
+    ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest het stuk en antwoordt met verwijzing naar het artikel. Controleer belangrijke antwoorden altijd in het stuk zelf. De tekst van het stuk gaat daarvoor naar Anthropic (de maker van Claude).</p>
+    <form class="formulier" data-form="vera-stuk"><label>Stuk<select name="pad">${S.stukken.map((f) => `<option value="${esc(f.pad)}"${f.pad === gekozen ? " selected" : ""}>${esc(f.naam)}</option>`).join("")}</select></label>
+    ${log.map((m) => `<div class="msg ${m.role === "user" ? "ik" : "vera"}" style="margin:0">${m.role === "user" ? esc(m.content) : opmaak(m.content)}</div>`).join("")}
+    ${S.veraBezig ? `<p style="color:var(--muted)">Vera leest het stuk…</p>` : ""}
+    <label>Uw vraag<input name="vraag" required maxlength="600" placeholder="Bijv. wie betaalt onderhoud aan de slagboom?"></label><button class="btn" type="submit"${S.veraBezig ? " disabled" : ""}>Vraag</button></form>`
+    : `<p style="color:var(--muted)">Upload eerst een stuk, bijvoorbeeld de splitsingsakte. Daarna kan Vera er vragen over beantwoorden.</p>`}
+  </div></div>`;
+}
+
 function instellingen() {
   const v = S.vve;
   return `<div class="kaart"><h2>Instellingen</h2><form class="formulier rij" data-form="instellingen">
@@ -300,7 +334,7 @@ function teken() {
   if (S.tab === "account") { app.innerHTML = (S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : "") + (S.melding ? `<div class="melding">${esc(S.melding)}</div>` : "") + account(); return; }
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
-  const scherm = { overzicht, geld, onderhoud, vergadering, leden, instellingen }[S.tab] || overzicht;
+  const scherm = { overzicht, geld, onderhoud, vergadering, stukken, leden, instellingen }[S.tab] || overzicht;
   app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">Testomgeving. Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt door AI (Claude) als experiment, beheerd door <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>`;
 }
 
@@ -398,6 +432,23 @@ app.addEventListener("submit", async (e) => {
       const l = S.leden.find((x) => x.id === f.dataset.lid);
       return opslaan(sb.from("wisverzoeken").insert({ vve_id: l.vve_id, lid_id: l.id, user_id: S.sessie.user.id, appartement: l.appartement, reden: (d.reden || "").trim() }), "Uw verzoek is ingediend. Het bestuur handelt het af.");
     }
+    case "vera-stuk": {
+      const pad = d.pad, vraag = (d.vraag || "").trim();
+      if (!vraag) return;
+      S.veraStuk = pad;
+      const log = (S.vera[pad] = S.vera[pad] || []);
+      log.push({ role: "user", content: vraag });
+      S.veraBezig = true; S.fout = ""; S.melding = ""; teken();
+      try {
+        const { data: { session } } = await sb.auth.getSession(); // vers token, ook na een uur open laten staan
+        const r = await fetch(VERA_API + "/stuk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
+          body: JSON.stringify({ pad, messages: log.slice(-8), vve: S.vve.naam, eenheid: eN() }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.answer) throw new Error(j.error || "Vera kon geen antwoord geven.");
+        log.push({ role: "assistant", content: j.answer });
+      } catch (err) { log.pop(); S.fout = err.message === "Failed to fetch" ? "Vera is nu niet bereikbaar." : err.message; }
+      S.veraBezig = false; return teken();
+    }
     case "inloglink": {
       const { error } = await sb.auth.signInWithOtp({ email: d.email.trim(), options: { emailRedirectTo: location.origin + "/portaal/" } });
       return error ? meld(/rate limit/i.test(error.message) ? "Er zijn net te veel inloglinks verstuurd. Probeer het over een uur opnieuw, of gebruik de laatste link die u al kreeg (als u die nog niet gebruikt heeft)." : "Versturen lukte niet: " + error.message, true) : meld(`Er is een inloglink gestuurd naar ${d.email}. Open die mail op dit apparaat. Geen mail? Kijk ook in uw spam.`);
@@ -477,6 +528,12 @@ document.addEventListener("click", async (e) => {
     if (!confirm(`Alle ${S.leden.length} ${eN()} krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
     return opslaan(sb.from("leden").update({ breukdeel: 1 }).eq("vve_id", S.vve.id), "Alle breukdelen staan op 1.");
   }
+  if (a === "stuk-weg") {
+    if (!confirm("Dit stuk verwijderen? Dit kan niet ongedaan worden.")) return;
+    const { error } = await sb.storage.from("stukken").remove([t.dataset.pad]);
+    if (error) return meld("Verwijderen lukte niet: " + error.message, true);
+    await laadStukken(); return meld("Stuk verwijderd.");
+  }
   if (a === "wis-intrekken") return opslaan(sb.from("wisverzoeken").delete().eq("id", t.dataset.id), "Verzoek ingetrokken.");
   if (a === "wis-uitvoeren") {
     if (!confirm(`Naam en e-mail bij dit ${e1()} wissen en het account verwijderen? Dit kan niet ongedaan worden.`)) return;
@@ -516,6 +573,16 @@ document.addEventListener("click", async (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target, a = t.dataset.actie;
   if (a === "post") opslaan(sb.from("mutaties").update({ post: t.value }).eq("id", t.dataset.id), "Post aangepast.");
+  if (a === "stuk-upload" && t.files[0]) {
+    const f = t.files[0];
+    if (f.size > 20 * 1048576) return meld("Dit bestand is groter dan 20 MB.", true);
+    const naam = f.name.normalize("NFKD").replace(/[^\w.\- ]+/g, "").replace(/\s+/g, "-").replace(/^-+/, "") || "stuk.pdf";
+    meld("Uploaden…");
+    sb.storage.from("stukken").upload(`${S.vve.id}/${naam}`, f, { contentType: "application/pdf", upsert: false }).then(async ({ error }) => {
+      if (error) return meld(/exists|duplicate/i.test(error.message) ? "Er staat al een stuk met deze naam." : "Uploaden lukte niet: " + error.message, true);
+      await laadStukken(); meld(`"${naam}" is geüpload.`);
+    });
+  }
   if (a === "csv" && t.files[0]) t.files[0].text().then(verwerkCsv);
   if (a === "imp-mee") { S.import[t.dataset.i].mee = t.checked; teken(); }
   if (a === "imp-post") S.import[t.dataset.i].post = t.value;

@@ -27,3 +27,4 @@ details.blok summary{cursor:pointer;font-weight:600;color:var(--accent)}
 table.bewerk input,table.bewerk select{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:6px;padding:6px 8px;font:16px var(--sans);width:100%;min-width:5rem}
 table.bewerk input.n{text-align:right;max-width:6rem}
 table.bewerk td{padding:4px 6px}
+.formulier .msg.ik{justify-self:end}.formulier .msg.vera{justify-self:start}
