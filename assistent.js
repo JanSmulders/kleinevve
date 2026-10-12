@@ -1,7 +1,7 @@
 // Vera, de AI-assistent van vvekit.nl.
 // Staat VERA_API leeg, dan antwoordt Vera met vaste antwoorden uit deze file (er gaat niets het internet op).
 // Staat er het adres van de Cloudflare Worker, dan antwoordt Claude, met de vaste antwoorden als reserve.
-const VERA_API = "";
+const VERA_API = "https://kleinevve.jansmulders1966.workers.dev";
 
 (() => {
   const AVATAR = "img/vera.svg";
