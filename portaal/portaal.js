@@ -112,11 +112,24 @@ async function laadStukken() {
   const { data: urls } = lijst.length ? await sb.storage.from("stukken").createSignedUrls(lijst.map((f) => `${S.vve.id}/${f.name}`), 3600) : { data: [] };
   S.stukken = lijst.map((f, i) => ({ naam: f.name, pad: `${S.vve.id}/${f.name}`, grootte: f.metadata?.size || 0, datum: f.created_at, url: urls?.[i]?.signedUrl }));
 }
-async function opslaan(belofte, ok) {
+async function opslaan(belofte, ok, mail = false) {
   const { error } = await belofte;
-  if (error) return meld("Dat lukte niet: " + error.message, true);
+  if (error) return meld(error.code === "23505" && /contact_email/.test(error.message) ? "Dit mailadres gebruikt een andere VvE al. Kies een ander adres." : "Dat lukte niet: " + error.message, true);
   await kiesVve(S.vve.id);
-  meld(ok || "Opgeslagen.");
+  const m = mail ? await doorsturen() : null;
+  meld((ok || "Opgeslagen.") + (m ? " " + m.tekst : ""), !!m?.fout);
+}
+// Een mailadres op @vvekit.nl stuurt de Worker (via ImprovMX) door naar alle bestuursleden met een e-mailadres.
+async function doorsturen() {
+  const adres = (S.vve?.contact_email || "").toLowerCase();
+  if (!adres.endsWith("@vvekit.nl") || !bestuur()) return null;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const r = await fetch(VERA_API + "/mailadres", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token }, body: JSON.stringify({ vve_id: S.vve.id }) });
+    const j = await r.json();
+    if (!r.ok) return { fout: true, tekst: "Doorsturen van " + adres + " lukte niet: " + (j.error || r.status) };
+    return { tekst: `Mail naar ${j.adres} gaat nu door naar ${j.naar.length === 1 ? "1 bestuurslid" : j.naar.length + " bestuursleden"}.` };
+  } catch { return { fout: true, tekst: "Doorsturen van " + adres + " lukte niet: geen verbinding." }; }
 }
 
 // ---------- schermen ----------
@@ -443,7 +456,8 @@ function instellingen() {
   <label>Saldo betaalrekening 1 januari<input name="sb" inputmode="decimal" value="${v.startsaldo_betaal}"></label>
   <label>Saldo reservefonds 1 januari<input name="sr" inputmode="decimal" value="${v.startsaldo_reserve}"></label>
   <label>E-mailadres voor leden<input type="email" name="mail" value="${esc(v.contact_email || "")}" placeholder="bijv. naamvve@vvekit.nl"></label>
-  <button class="btn" type="submit">Opslaan</button></form></div>
+  <button class="btn" type="submit">Opslaan</button></form>
+  <p style="font-size:.85rem;color:var(--muted)">Kiest u een adres op @vvekit.nl, dan stuurt het portaal de mail door naar alle bestuursleden die bij ${cap(eN())} aanpassen een e-mailadres hebben. Dat wordt vanzelf bijgewerkt als het bestuur verandert.${(v.contact_email || "").toLowerCase().endsWith("@vvekit.nl") ? ` <button class="linkknop" data-actie="doorsturen">Doorsturen nu bijwerken</button>` : ""}</p></div>
   <div class="kaart" style="margin-top:20px"><h2>${cap(eN())} aanpassen</h2>
   <p style="margin-top:0;color:var(--muted);font-size:.9rem">Pas hier per ${e1()} het nummer, breukdeel, de naam, het e-mailadres en de rol aan, en kies onderaan "Wijzigingen opslaan". Breukdeel: vul de teller in (1, of 12 bij 12/1000); het portaal deelt zelf door het totaal (nu ${nl(noemer())}).</p>
   <p><button class="klein-knop" data-actie="alle-een">Alle breukdelen op 1 zetten</button></p>
@@ -592,7 +606,7 @@ app.addEventListener("submit", async (e) => {
       await laadVves(); await kiesVve(id); S.tab = "instellingen";
       return meld(`VvE "${d.naam}" aangemaakt. Kies hier de soort en het aantal eenheden; daarna kunt u bij Stukken de akte uploaden en Vera de gegevens laten invullen.`);
     }
-    case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), `${cap(e1())} toegevoegd.`);
+    case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), `${cap(e1())} toegevoegd.`, d.rol === "bestuur");
     case "appartementen": {
       const wijzig = [];
       for (const l of S.leden) {
@@ -611,7 +625,8 @@ app.addEventListener("submit", async (e) => {
       for (const [l] of hernoem) { const { error } = await sb.from("leden").update({ appartement: "~" + l.id }).eq("id", l.id); if (error) return meld("Opslaan lukte niet: " + error.message, true); }
       const fouten = (await Promise.all(wijzig.map(([l, n]) => sb.from("leden").update(n).eq("id", l.id)))).filter((r) => r.error);
       if (fouten.length) { await kiesVve(S.vve.id); return meld("Niet alles is opgeslagen: " + fouten[0].error.message, true); }
-      return opslaan(Promise.resolve({}), `${wijzig.length} ${wijzig.length === 1 ? e1() : eN()} aangepast.`);
+      const bestuurAnders = wijzig.some(([l, n]) => (l.rol === "bestuur" || n.rol === "bestuur") && (n.rol !== l.rol || n.email !== l.email));
+      return opslaan(Promise.resolve({}), `${wijzig.length} ${wijzig.length === 1 ? e1() : eN()} aangepast.`, bestuurAnders);
     }
     case "reeks": {
       const van = parseInt(d.van), tot = parseInt(d.tot), bd = deel(d.deel);
@@ -647,7 +662,7 @@ app.addEventListener("submit", async (e) => {
         const { error } = await sb.from("leden").delete().in("id", weg.map((l) => l.id));
         if (error) return meld("Verwijderen lukte niet: " + error.message, true);
       }
-      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim() || null }).eq("id", vve_id), "Instellingen opgeslagen.");
+      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim().toLowerCase() || null }).eq("id", vve_id), "Instellingen opgeslagen.", (d.mail || "").trim().toLowerCase() !== (S.vve.contact_email || ""));
     }
   }
 });
@@ -713,7 +728,8 @@ document.addEventListener("click", async (e) => {
   }
   if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
   if (a === "kies-vve") { S.voorstel = null; S.nieuweVve = false; S.melding = S.fout = ""; await kiesVve(t.dataset.id); return teken(); }
-  if (a === "weg" && confirm("Weet u het zeker? Dit kan niet ongedaan worden.")) return opslaan(sb.from(t.dataset.tabel).delete().eq("id", t.dataset.id), "Verwijderd.");
+  if (a === "weg" && confirm("Weet u het zeker? Dit kan niet ongedaan worden.")) return opslaan(sb.from(t.dataset.tabel).delete().eq("id", t.dataset.id), "Verwijderd.", t.dataset.tabel === "leden" && S.leden.find((l) => l.id === t.dataset.id)?.rol === "bestuur");
+  if (a === "doorsturen") { const m = await doorsturen(); return m && meld(m.tekst, !!m.fout); }
   if (a === "akkoord") return opslaan(sb.from("akkoorden").update({ status: t.dataset.status, besloten_door: S.sessie.user.id, besloten_op: new Date().toISOString() }).eq("id", t.dataset.id), "Besluit vastgelegd.");
   if (a === "stem" && bestuur()) {
     return opslaan(sb.rpc("stem", { p_id: t.dataset.id, p_app: t.dataset.app, p_keus: t.dataset.k }), "Stem vastgelegd.");

@@ -332,3 +332,16 @@ grant select, insert, update, delete on public.berichten to authenticated;
 
 -- Migratie vve_contact_email: mailadres waarop leden het bestuur van deze VvE kunnen mailen.
 alter table public.vves add column contact_email text check (contact_email is null or contact_email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
+-- ---------- Mailadres per VvE doorsturen naar het bestuur (migratie mail_doorsturen) ----------
+-- Elk adres hoort bij één VvE; de Worker (/mailadres) vraagt de bestuursadressen op en zet ze in ImprovMX.
+create unique index vves_contact_email_uniek on public.vves (lower(contact_email)) where contact_email is not null;
+create or replace function public.bestuur_mails(v uuid) returns text[] language plpgsql stable security definer set search_path = public as $$
+begin
+  if not is_bestuur(v) then raise exception 'Alleen het bestuur'; end if;
+  return array(select distinct lower(e) from (
+    select email as e from leden where vve_id = v and rol = 'bestuur' and email is not null and email <> ''
+    union select u.email from vve_beheer b join auth.users u on u.id = b.user_id where b.vve_id = v and u.email is not null) x order by 1);
+end $$;
+revoke all on function public.bestuur_mails(uuid) from public, anon;
+grant execute on function public.bestuur_mails(uuid) to authenticated;
