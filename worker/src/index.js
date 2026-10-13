@@ -285,9 +285,12 @@ async function mailadres(request, env, headers) {
   const mx = (pad, init = {}) => fetch(`https://api.improvmx.com/v4/domains/${MAIL_DOMEIN}/aliases${pad}`, { ...init,
     headers: { Authorization: "Basic " + btoa("api:" + env.IMPROVMX_API_KEY), "Content-Type": "application/json" } });
   const forward = mails.join(",");
-  const bestaand = await mx("/" + encodeURIComponent(lokaal));
-  const res = bestaand.ok
-    ? await mx("/" + (await bestaand.json()).alias.id, { method: "PUT", body: JSON.stringify({ forward }) })
+  // Opzoeken via de lijst (filter op naam); bijwerken kan alleen met het numerieke id.
+  const zoek = await mx("?query=" + encodeURIComponent(lokaal) + "&limit=200");
+  if (!zoek.ok) return json({ error: "ImprovMX gaf geen antwoord (" + zoek.status + ")." }, 502, headers);
+  const bestaand = ((await zoek.json()).aliases || []).find((a) => a.alias === lokaal);
+  const res = bestaand
+    ? await mx("/" + bestaand.id, { method: "PUT", body: JSON.stringify({ forward }) })
     : await mx("", { method: "POST", body: JSON.stringify({ alias: lokaal, forward }) });
   if (!res.ok) {
     const fout = await res.json().catch(() => ({}));
