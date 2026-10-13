@@ -304,3 +304,31 @@ begin
   end if;
   return v;
 end $$;
+
+-- Migratie berichten: leden sturen het bestuur een bericht via het portaal.
+create table public.berichten (
+  id uuid primary key default gen_random_uuid(),
+  vve_id uuid not null references public.vves on delete cascade,
+  user_id uuid references auth.users on delete set null,
+  afzender text not null default '',          -- eenheidsnummer of 'beheer', geen naam
+  onderwerp text not null check (length(onderwerp) between 1 and 120),
+  tekst text not null check (length(tekst) between 1 and 4000),
+  status text not null default 'open' check (status in ('open', 'afgehandeld')),
+  antwoord text not null default '' check (length(antwoord) <= 4000),
+  aangemaakt timestamptz not null default now(),
+  beantwoord_op timestamptz
+);
+create index on public.berichten (vve_id, aangemaakt desc);
+alter table public.berichten enable row level security;
+create policy "eigen bericht of bestuur leest" on public.berichten for select to authenticated
+  using (user_id = auth.uid() or is_bestuur(vve_id));
+create policy "lid stuurt bericht" on public.berichten for insert to authenticated
+  with check (user_id = auth.uid() and is_lid(vve_id) and status = 'open' and antwoord = '');
+create policy "bestuur antwoordt" on public.berichten for update to authenticated
+  using (is_bestuur(vve_id)) with check (is_bestuur(vve_id));
+create policy "bestuur verwijdert bericht" on public.berichten for delete to authenticated
+  using (is_bestuur(vve_id));
+grant select, insert, update, delete on public.berichten to authenticated;
+
+-- Migratie vve_contact_email: mailadres waarop leden het bestuur van deze VvE kunnen mailen.
+alter table public.vves add column contact_email text check (contact_email is null or contact_email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$');

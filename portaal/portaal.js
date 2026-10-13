@@ -32,7 +32,7 @@ const vandaag = () => new Date().toISOString().slice(0, 10);
 const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige vergadering", "Jaarrekening en decharge bestuur", "Begroting en voorschotten", "Reservefonds en MJOP", "Besluiten over onderhoud", "Benoeming bestuur en kascommissie", "Rondvraag en sluiting"];
 
 // ---------- toestand ----------
-const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], stukken: [], vera: {}, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
+const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], berichten: [], stukken: [], vera: {}, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const beheert = () => (S.beheer || []).includes(S.vve?.id); // beheerder zonder eigen eenheid
 const bestuur = () => ik()?.rol === "bestuur" || beheert();
@@ -67,14 +67,16 @@ function cijfers() {
 
 function aandachtspunten(c) {
   const p = [];
-  for (const l of c.perLid) if (c.maanden && l.verschil < -1) p.push(["let", `App. ${esc(l.appartement)} loopt ${eur(-l.verschil)} achter met voorschotten.`]);
+  for (const l of c.perLid) if (c.maanden && l.verschil < -1) p.push(["let", `${eK()} ${esc(l.appartement)} loopt ${eur(-l.verschil)} achter met voorschotten.`]);
   for (const m of c.mjop) if (m.volgende - new Date().getFullYear() <= 2) p.push(["let", `${esc(m.onderdeel)} is aan de beurt in ${m.volgende} (${eur0(m.kosten)}).`]);
   if (!S.mjop.length && c.minimum) p.push(["let", `Er is nog geen MJOP. Dan is het wettelijk minimum voor het reservefonds 0,5% van de herbouwwaarde: ${eur0(c.minimum)} per jaar.`]);
   if (!S.mjop.length && !c.minimum) p.push(["let", "Vul de herbouwwaarde in (Instellingen) of maak een MJOP (Onderhoud), dan reken ik de reservering uit."]);
   for (const b of c.posten) { const w = c.werkelijk(b.post); if (w > Number(b.bedrag) && Number(b.bedrag) > 0) p.push(["let", `${esc(b.post)}: ${eur0(w)} uitgegeven, begroot ${eur0(b.bedrag)}.`]); }
   const ditJaar = S.vergaderingen.some((v) => v.datum.startsWith(String(c.jaar)) || v.datum.startsWith(String(c.jaar + 1)));
   if (!ditJaar) p.push(["let", "Er staat nog geen ledenvergadering gepland. Een VvE moet minstens één keer per jaar vergaderen."]);
-  for (const w of S.wisverzoeken) if (w.status === "open" && bestuur()) p.push(["let", `App. ${esc(w.appartement)} vraagt om wissen van persoonsgegevens (zie Leden). Handel dit binnen een maand af.`]);
+  for (const w of S.wisverzoeken) if (w.status === "open" && bestuur()) p.push(["let", `${eK()} ${esc(w.appartement)} vraagt om wissen van persoonsgegevens (zie Leden). Handel dit binnen een maand af.`]);
+  const nieuw = S.berichten.filter((b) => b.status === "open").length;
+  if (nieuw && bestuur()) p.push(["let", `${nieuw} ${nieuw === 1 ? "bericht" : "berichten"} van leden ${nieuw === 1 ? "wacht" : "wachten"} op antwoord (zie Berichten).`]);
   if (!S.leden.some((l) => l.email)) p.push(["let", `Nog geen e-mailadressen bij de ${eN()}: eigenaren kunnen dan nog niet inloggen.`]);
   if (!p.length) p.push(["ok", "Alles op orde: geen achterstanden, geen onderhoud binnen 2 jaar, vergadering gepland."]);
   return p;
@@ -92,12 +94,14 @@ async function laadVves() {
 }
 async function kiesVve(id) {
   const q = (t) => sb.from(t).select("*").eq("vve_id", id);
-  const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken] = await Promise.all([
+  const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken, berichten] = await Promise.all([
     sb.from("vves").select("*").eq("id", id).single(), q("leden").order("appartement"), q("begroting").order("post"),
     q("mutaties").order("datum", { ascending: false }), q("mjop").order("laatst"), q("vergaderingen").order("datum", { ascending: false }),
     q("stemmingen"), q("akkoorden").order("aangemaakt", { ascending: false }), q("wisverzoeken").order("aangemaakt", { ascending: false }),
+    q("berichten").order("aangemaakt", { ascending: false }),
   ]);
   for (const r of [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken]) if (r.error) throw r.error;
+  S.berichten = berichten.error ? [] : berichten.data; // tabel kan nog ontbreken
   Object.assign(S, { vve: vve.data, leden: leden.data, begroting: begroting.data, mutaties: mutaties.data, mjop: mjop.data, vergaderingen: vergaderingen.data, stemmingen: stemmingen.data, akkoorden: akkoorden.data, wisverzoeken: wisverzoeken.data });
   S.leden.sort((a, b) => a.appartement.localeCompare(b.appartement, "nl", { numeric: true }));
   await laadStukken();
@@ -177,7 +181,7 @@ function kop(c) {
   ${S.vves.length > 1 || S.beheerder ? `<div class="vve-kies">${S.vves.length > 1 ? S.vves.map((v) => `<button class="chip" data-actie="kies-vve" data-id="${v.id}"${v.id === S.vve.id ? ' aria-current="true" style="font-weight:700"' : ""}>${esc(v.naam)}</button>`).join("") : ""}${S.beheerder ? `<button class="chip" data-actie="nieuwe-vve-open">+ Nieuwe VvE</button>` : ""}</div>` : ""}
   ${S.nieuweVve ? `<div class="kaart" style="margin-top:14px;max-width:520px"><h2>Nieuwe VvE</h2>${nieuweVveForm()}</div>` : ""}</div>
   <div class="kop-vera"><img src="/img/vera.svg" alt="" width="44" height="44"><div><strong>Vera <span class="ai-label">AI</span></strong><span>Controleert de cijfers bij elk bezoek.</span></div></div></section>
-  <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "stukken", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
+  <nav class="tabs" role="tablist">${["overzicht", "geld", "onderhoud", "vergadering", "stukken", "berichten", "leden", ...(bestuur() ? ["instellingen"] : [])].map((t) => `<button role="tab" data-tab="${t}" aria-selected="${S.tab === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("")}</nav>
   ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}${S.melding ? `<div class="melding">${esc(S.melding)}</div>` : ""}`;
 }
 
@@ -405,6 +409,29 @@ async function voorstelOvernemen(d) {
   meld(klaar.length ? "Overgenomen: " + klaar.join(", ") + "." : "Niets aangevinkt, er is niets veranderd.");
 }
 
+// ---------- Berichten: leden schrijven het bestuur; een lid ziet alleen zijn eigen berichten ----------
+function berichten() {
+  const tijd = (t) => new Date(t).toLocaleString("nl-NL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const kaartje = (b, beheer) => `<div class="akkoord" style="margin-bottom:12px"><p style="margin:0 0 .3em"><strong>${esc(b.onderwerp)}</strong>
+    <span class="label${b.status === "open" ? " let" : ""}">${b.status === "open" ? (b.antwoord ? "beantwoord" : "nieuw") : "afgehandeld"}</span></p>
+    <p style="margin:0;font-size:.85rem;color:var(--muted)">${beheer ? `Van ${b.afzender === "beheer" ? "de beheerder" : `${eK().toLowerCase()} ${esc(b.afzender)}`} · ` : ""}${tijd(b.aangemaakt)}</p>
+    <p style="white-space:pre-line;margin:.5em 0">${esc(b.tekst)}</p>
+    ${beheer ? `<form class="formulier" data-form="antwoord" data-id="${b.id}"><label>Antwoord aan het lid<textarea name="antwoord" maxlength="4000">${esc(b.antwoord)}</textarea></label>
+      <label style="display:flex;gap:.5em;align-items:center"><input type="checkbox" name="klaar" style="width:auto"${b.status === "afgehandeld" ? " checked" : ""}> Afgehandeld</label>
+      <p style="margin:0"><button class="btn ghost" type="submit">Opslaan</button> <button class="klein-knop" type="button" data-actie="weg" data-tabel="berichten" data-id="${b.id}">Verwijderen</button></p></form>`
+    : b.antwoord ? `<div class="msg vera" style="margin:0"><strong>Antwoord van het bestuur${b.beantwoord_op ? ` (${tijd(b.beantwoord_op)})` : ""}:</strong><br>${esc(b.antwoord)}</div>` : `<p style="margin:0;font-size:.85rem;color:var(--muted)">Nog geen antwoord.</p>`}</div>`;
+  const mijn = S.berichten.filter((b) => b.user_id === S.sessie.user.id);
+  const schrijf = `<div class="kaart"><h2>Bericht aan het bestuur</h2>
+    <p style="margin-top:0;color:var(--muted);font-size:.9rem">Alleen het bestuur${S.beheer?.length ? " en de beheerder" : ""} van ${esc(S.vve.naam)} leest dit. U ziet hier ook het antwoord.${S.vve.contact_email ? ` Liever mailen? Dat kan naar <a href="mailto:${esc(S.vve.contact_email)}">${esc(S.vve.contact_email)}</a>.` : ""}</p>
+    <form class="formulier" data-form="bericht"><label>Onderwerp<input name="onderwerp" required maxlength="120" placeholder="Bijv. lekkage in de berging"></label>
+    <label>Bericht<textarea name="tekst" required maxlength="4000"></textarea></label><button class="btn" type="submit">Versturen</button></form>
+    ${mijn.length ? `<h3 style="margin-top:20px">Uw berichten</h3>${mijn.map((b) => kaartje(b, false)).join("")}` : ""}</div>`;
+  if (!bestuur()) return schrijf;
+  const lijst = [...S.berichten].sort((a, b) => (a.status === "open") === (b.status === "open") ? b.aangemaakt.localeCompare(a.aangemaakt) : a.status === "open" ? -1 : 1);
+  return `<div class="twee"><div class="kaart"><h2>Berichten van leden (${S.berichten.filter((b) => b.status === "open").length} open)</h2>
+    ${lijst.map((b) => kaartje(b, true)).join("") || `<p style="color:var(--muted)">Nog geen berichten. Leden sturen die via deze tab.</p>`}</div>${ik() ? schrijf : ""}</div>`;
+}
+
 function instellingen() {
   const v = S.vve;
   return `<div class="kaart"><h2>Instellingen</h2><form class="formulier rij" data-form="instellingen">
@@ -415,6 +442,7 @@ function instellingen() {
   <label>Herbouwwaarde<input name="hbw" inputmode="decimal" value="${v.herbouwwaarde ?? ""}"></label>
   <label>Saldo betaalrekening 1 januari<input name="sb" inputmode="decimal" value="${v.startsaldo_betaal}"></label>
   <label>Saldo reservefonds 1 januari<input name="sr" inputmode="decimal" value="${v.startsaldo_reserve}"></label>
+  <label>E-mailadres voor leden<input type="email" name="mail" value="${esc(v.contact_email || "")}" placeholder="bijv. naamvve@vvekit.nl"></label>
   <button class="btn" type="submit">Opslaan</button></form></div>
   <div class="kaart" style="margin-top:20px"><h2>${cap(eN())} aanpassen</h2>
   <p style="margin-top:0;color:var(--muted);font-size:.9rem">Pas hier per ${e1()} het nummer, breukdeel, de naam, het e-mailadres en de rol aan, en kies onderaan "Wijzigingen opslaan". Breukdeel: vul de teller in (1, of 12 bij 12/1000); het portaal deelt zelf door het totaal (nu ${nl(noemer())}).</p>
@@ -434,7 +462,7 @@ function teken() {
   if (S.tab === "account") { app.innerHTML = (S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : "") + (S.melding ? `<div class="melding">${esc(S.melding)}</div>` : "") + account(); return; }
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
-  const scherm = { overzicht, geld, onderhoud, vergadering, stukken, leden, instellingen }[S.tab] || overzicht;
+  const scherm = { overzicht, geld, onderhoud, vergadering, stukken, berichten, leden, instellingen }[S.tab] || overzicht;
   app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">Testomgeving. Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt door AI (Claude) als experiment, beheerd door <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>` + `<button class="vera-knop" type="button" data-actie="naar-vera" aria-label="Vraag Vera over de stukken en het portaal"><img src="/img/vera.svg" alt=""><span>Vraag het Vera <span class="ai-label">AI</span></span></button>`;
 }
 
@@ -519,6 +547,8 @@ app.addEventListener("submit", async (e) => {
   const f = e.target, d = Object.fromEntries(new FormData(f)), vve_id = S.vve?.id;
   switch (f.dataset.form) {
     case "voorstel": return voorstelOvernemen(d);
+    case "bericht": return opslaan(sb.from("berichten").insert({ vve_id, user_id: S.sessie.user.id, afzender: ik()?.appartement || (beheert() ? "beheer" : ""), onderwerp: d.onderwerp.trim(), tekst: d.tekst.trim() }), "Uw bericht is verstuurd naar het bestuur.");
+    case "antwoord": return opslaan(sb.from("berichten").update({ antwoord: (d.antwoord || "").trim(), status: d.klaar ? "afgehandeld" : "open", beantwoord_op: (d.antwoord || "").trim() ? new Date().toISOString() : null }).eq("id", f.dataset.id), "Opgeslagen.");
     case "inloggen": {
       const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.ww });
       if (error) return meld(/invalid/i.test(error.message) ? "E-mailadres of wachtwoord klopt niet. Nog geen wachtwoord? Log dan in met een e-maillink en stel daarna een wachtwoord in." : "Inloggen lukte niet: " + error.message, true);
@@ -617,7 +647,7 @@ app.addEventListener("submit", async (e) => {
         const { error } = await sb.from("leden").delete().in("id", weg.map((l) => l.id));
         if (error) return meld("Verwijderen lukte niet: " + error.message, true);
       }
-      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0 }).eq("id", vve_id), "Instellingen opgeslagen.");
+      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim() || null }).eq("id", vve_id), "Instellingen opgeslagen.");
     }
   }
 });
