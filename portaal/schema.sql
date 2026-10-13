@@ -345,3 +345,23 @@ begin
 end $$;
 revoke all on function public.bestuur_mails(uuid) from public, anon;
 grant execute on function public.bestuur_mails(uuid) to authenticated;
+
+-- Migratie bericht_melding (toegepast, nog niet in gebruik): voor een latere meldingsmail aan het bestuur bij een nieuw bericht.
+alter table public.berichten add column gemeld timestamptz;
+create or replace function public.bericht_melding(b uuid) returns json language plpgsql security definer set search_path = public as $$
+declare r public.berichten; ontv text[]; van text;
+begin
+  update berichten set gemeld = now()
+   where id = b and user_id = auth.uid() and gemeld is null and aangemaakt > now() - interval '15 minutes'
+   returning * into r;
+  if not found then raise exception 'Geen nieuw bericht om te melden'; end if;
+  select email into van from auth.users where id = auth.uid();
+  ontv := array(select distinct lower(e) from (
+    select email as e from leden where vve_id = r.vve_id and rol = 'bestuur' and email is not null and email <> ''
+    union select u.email from vve_beheer vb join auth.users u on u.id = vb.user_id where vb.vve_id = r.vve_id and u.email is not null) x
+    where lower(e) <> lower(coalesce(van, '')) order by 1);
+  return json_build_object('vve', (select naam from vves where id = r.vve_id), 'afzender', r.afzender, 'onderwerp', r.onderwerp,
+    'tekst', r.tekst, 'van', van, 'naar', ontv);
+end $$;
+revoke all on function public.bericht_melding(uuid) from public, anon;
+grant execute on function public.bericht_melding(uuid) to authenticated;
