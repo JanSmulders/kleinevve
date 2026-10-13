@@ -67,7 +67,9 @@ function cijfers() {
 
 function aandachtspunten(c) {
   const p = [];
-  for (const l of c.perLid) if (c.maanden && l.verschil < -1) p.push(["let", `${eK()} ${esc(l.appartement)} loopt ${eur(-l.verschil)} achter met voorschotten.`]);
+  // Betalingen van anderen ziet alleen het bestuur (privacy); een lid ziet alleen zijn eigen achterstand.
+  for (const l of c.perLid) if (c.maanden && l.verschil < -1 && (bestuur() || l.appartement === ik()?.appartement))
+    p.push(["let", bestuur() ? `${eK()} ${esc(l.appartement)} loopt ${eur(-l.verschil)} achter met voorschotten.` : `U loopt ${eur(-l.verschil)} achter met uw voorschotten.`]);
   for (const m of c.mjop) if (m.volgende - new Date().getFullYear() <= 2) p.push(["let", `${esc(m.onderdeel)} is aan de beurt in ${m.volgende} (${eur0(m.kosten)}).`]);
   if (!S.mjop.length && c.minimum) p.push(["let", `Er is nog geen MJOP. Dan is het wettelijk minimum voor het reservefonds 0,5% van de herbouwwaarde: ${eur0(c.minimum)} per jaar.`]);
   if (!S.mjop.length && !c.minimum) p.push(["let", "Vul de herbouwwaarde in (Instellingen) of maak een MJOP (Onderhoud), dan reken ik de reservering uit."]);
@@ -234,9 +236,9 @@ function geld(c) {
   const kies = (m) => bestuur() ? `<select class="post" data-actie="post" data-id="${m.id}">${posten.map((p) => `<option${p === m.post ? " selected" : ""}>${esc(p)}</option>`).join("")}</select>` : esc(m.post);
   return `<div class="twee">
     <div class="kaart"><h2>Voorschotten ${c.jaar}</h2>
-      <p style="margin-top:0;color:var(--muted);font-size:.9rem">Begroting ${eur0(c.vast)} + reservering ${eur0(c.reservering)} = ${eur0(c.totaal)} per jaar, verdeeld naar breukdeel. Verwacht = ${c.maanden} maanden.</p>
+      <p style="margin-top:0;color:var(--muted);font-size:.9rem">Begroting ${eur0(c.vast)} + reservering ${eur0(c.reservering)} = ${eur0(c.totaal)} per jaar, verdeeld naar breukdeel. Verwacht = ${c.maanden} maanden.${bestuur() ? "" : " U ziet alleen uw eigen betalingen; die van anderen ziet alleen het bestuur."}</p>
       <div class="tw"><table class="lijst"><tr><th>${eK()}</th><th class="n">Deel</th><th class="n">Per maand</th><th class="n">Ontvangen</th><th class="n">Verschil</th></tr>
-      ${c.perLid.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(c.noemer)}</td><td class="n">${eur(l.pm)}</td><td class="n">${eur(l.ontvangen)}</td><td class="n ${l.verschil < -1 ? "let" : "ok"}">${eur(l.verschil)}</td></tr>`).join("")}</table></div></div>
+      ${c.perLid.filter((l) => bestuur() || l.appartement === ik()?.appartement).map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(c.noemer)}</td><td class="n">${eur(l.pm)}</td><td class="n">${eur(l.ontvangen)}</td><td class="n ${l.verschil < -1 ? "let" : "ok"}">${eur(l.verschil)}</td></tr>`).join("")}</table></div></div>
     <div class="kaart"><h2>Begroting ${c.jaar}</h2><div class="tw"><table class="lijst"><tr><th>Post</th><th class="n">Begroot</th><th class="n">Werkelijk</th>${bestuur() ? "<th></th>" : ""}</tr>
       ${c.posten.map((b) => `<tr><td>${esc(b.post)}</td><td class="n">${eur0(b.bedrag)}</td><td class="n">${eur0(c.werkelijk(b.post))}</td>${bestuur() ? `<td><button class="klein-knop" data-actie="weg" data-tabel="begroting" data-id="${b.id}">×</button></td>` : ""}</tr>`).join("")}
       <tr><td>Storting reservefonds (MJOP)</td><td class="n">${eur0(c.reservering)}</td><td class="n">${eur0(c.werkelijk("Reservefonds"))}</td>${bestuur() ? "<td></td>" : ""}</tr>
@@ -249,7 +251,8 @@ function geld(c) {
       <input type="file" accept=".csv,text/csv" data-actie="csv">${S.import ? importVoorbeeld(posten) : ""}</details>
       <details class="blok"><summary>Eén mutatie toevoegen</summary><form class="formulier rij" data-form="mutatie"><label>Datum<input type="date" name="datum" required value="${vandaag()}"></label><label>Omschrijving<input name="oms" required></label><label>Bedrag (af = min)<input name="bedrag" required inputmode="decimal" placeholder="-75,00"></label><label>Post<select name="post">${posten.map((p) => `<option>${esc(p)}</option>`).join("")}</select></label><label>${cap(e1())}<select name="app"><option value="">–</option>${S.leden.map((l) => `<option>${esc(l.appartement)}</option>`).join("")}</select></label><button class="btn" type="submit">Toevoegen</button></form></details>` : ""}
     <div class="tw" style="margin-top:12px"><table class="lijst"><tr><th>Datum</th><th>Omschrijving</th><th>Post</th><th>${eK()}</th><th class="n">Bedrag</th>${bestuur() ? "<th></th>" : ""}</tr>
-    ${S.mutaties.slice(0, 100).map((m) => `<tr><td>${datumNL(m.datum)}</td><td>${esc(m.omschrijving)}</td><td>${kies(m)}</td><td>${esc(m.appartement || "")}</td><td class="n ${m.bedrag > 0 ? "ok" : ""}">${eur(m.bedrag)}</td>${bestuur() ? `<td><button class="klein-knop" data-actie="weg" data-tabel="mutaties" data-id="${m.id}">×</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="6" style="color:var(--muted)">Nog geen mutaties.</td></tr>`}</table></div></div>`;
+    ${S.mutaties.filter((m) => bestuur() || !m.appartement || m.appartement === ik()?.appartement).slice(0, 100).map((m) => `<tr><td>${datumNL(m.datum)}</td><td>${esc(m.omschrijving)}</td><td>${kies(m)}</td><td>${esc(m.appartement || "")}</td><td class="n ${m.bedrag > 0 ? "ok" : ""}">${eur(m.bedrag)}</td>${bestuur() ? `<td><button class="klein-knop" data-actie="weg" data-tabel="mutaties" data-id="${m.id}">×</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="6" style="color:var(--muted)">Nog geen mutaties.</td></tr>`}</table></div>
+    ${bestuur() ? "" : `<p style="font-size:.85rem;color:var(--muted)">Betalingen van andere eigenaren staan hier niet, wel in de saldi.</p>`}</div>`;
 }
 
 function onderhoud(c) {
