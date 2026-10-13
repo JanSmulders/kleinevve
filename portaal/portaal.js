@@ -435,7 +435,7 @@ function teken() {
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
   const scherm = { overzicht, geld, onderhoud, vergadering, stukken, leden, instellingen }[S.tab] || overzicht;
-  app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">Testomgeving. Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt door AI (Claude) als experiment, beheerd door <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>`;
+  app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">Testomgeving. Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt door AI (Claude) als experiment, beheerd door <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>` + `<button class="vera-knop" type="button" data-actie="naar-vera" aria-label="Vraag Vera over de stukken en het portaal"><img src="/img/vera.svg" alt=""><span>Vraag het Vera <span class="ai-label">AI</span></span></button>`;
 }
 
 // ---------- CSV-import ----------
@@ -634,6 +634,12 @@ document.addEventListener("click", async (e) => {
   }
   if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
   if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
+  if (a === "naar-vera") {
+    S.tab = "stukken"; S.melding = S.fout = ""; teken();
+    const v = app.querySelector("form[data-form=vera-stuk] [name=vraag]");
+    if (v) { v.scrollIntoView({ block: "center", behavior: "smooth" }); v.focus({ preventScroll: true }); }
+    return;
+  }
   if (a === "vera-wis") { delete S.vera[t.dataset.pad]; return teken(); }
   if (a === "voorstel-weg") { S.voorstel = null; return teken(); }
   if (a === "invullen") {
