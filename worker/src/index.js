@@ -300,6 +300,41 @@ async function mailadres(request, env, headers) {
   return json({ adres, naar: mails }, 200, headers);
 }
 
+// ---------- Portaal: meldingsmail aan het bestuur bij een nieuw bericht (via Resend) ----------
+// De database (rpc bericht_melding) controleert dat de aanroeper de schrijver is en meldt elk bericht maar één keer.
+async function melding(request, env, headers, origin) {
+  if (!env.RESEND_API_KEY) return json({ error: "Mail versturen is nog niet ingesteld." }, 503, headers);
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token || !env.SUPABASE_URL || !env.SUPABASE_KEY) return json({ error: "Niet ingelogd." }, 401, headers);
+  let body;
+  try { body = JSON.parse(await request.text()); } catch { return json({ error: "Ongeldig verzoek." }, 400, headers); }
+  const id = String(body.bericht_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Onbekend bericht." }, 400, headers);
+  const r = await fetch(env.SUPABASE_URL + "/rest/v1/rpc/bericht_melding", { method: "POST",
+    headers: { apikey: env.SUPABASE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ b: id }) });
+  if (!r.ok) return json({ error: "Dit bericht is al gemeld of niet van u." }, 403, headers);
+  const m = await r.json();
+  const naar = (m.naar || []).filter((e) => /^[^@\s,]+@[^@\s,]+\.[^@\s,]+$/.test(e)).slice(0, 20);
+  if (!naar.length) return json({ verstuurd: 0 }, 200, headers);
+  const van = m.afzender === "beheer" ? "de beheerder" : m.afzender ? `de eigenaar van nr. ${m.afzender}` : "een lid";
+  const tekst = `Er is een nieuw bericht voor het bestuur van ${m.vve} in het VvE-portaal.\n\n` +
+    `Van: ${van}${m.van ? ` (${m.van})` : ""}\nOnderwerp: ${m.onderwerp}\n\n${m.tekst}\n\n` +
+    `Antwoorden kan in het portaal onder Berichten: ${origin}/portaal/\n` +
+    (m.van ? "Of beantwoord deze mail; die gaat dan rechtstreeks naar de afzender.\n" : "") +
+    `\nDeze mail is automatisch verstuurd door het VvE-portaal van vvekit.nl.`;
+  const mail = { from: env.RESEND_FROM || "VvE-portaal <portaal@vvekit.nl>", to: naar,
+    subject: `Nieuw bericht ${m.vve}: ${String(m.onderwerp).slice(0, 120)}`, text: tekst };
+  if (m.van) mail.reply_to = m.van;
+  const res = await fetch("https://api.resend.com/emails", { method: "POST",
+    headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" }, body: JSON.stringify(mail) });
+  if (!res.ok) {
+    const fout = await res.json().catch(() => ({}));
+    console.error(`Resend ${res.status}: ${fout.message || ""}`);
+    return json({ error: "De mail kon niet worden verstuurd." }, 502, headers);
+  }
+  return json({ verstuurd: naar.length }, 200, headers);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "GET" || request.method === "HEAD") return testSite(new URL(request.url));
@@ -314,6 +349,7 @@ export default {
     if (!env.ANTHROPIC_API_KEY) return json({ error: "Nog niet ingesteld." }, 503, headers);
     const pad = new URL(request.url).pathname;
     if (pad === "/mailadres") return mailadres(request, env, headers);
+    if (pad === "/melding") return melding(request, env, headers, origin);
     if (pad === "/stuk" || pad === "/invullen") return stukVraag(request, env, headers, pad === "/invullen");
 
     const ip = request.headers.get("CF-Connecting-IP") || "onbekend";
