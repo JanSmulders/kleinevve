@@ -248,7 +248,7 @@ function vergadering() {
   ${bestuur() ? `<div class="kaart" style="margin-top:20px"><h2>Vergadering plannen</h2><form class="formulier" data-form="vergadering"><label>Datum<input type="date" name="datum" required></label><label>Agenda (één punt per regel)<textarea name="agenda">${STANDAARD_AGENDA.join("\n")}</textarea></label><button class="btn" type="submit">Plannen</button></form></div>` : ""}`;
 }
 
-function stemming(s) {
+function telling(s) {
   let voor = 0, tegen = 0, blanco = 0, aanwezig = 0;
   const noemer = S.leden.reduce((t, l) => t + Number(l.breukdeel), 0);
   for (const l of S.leden) {
@@ -259,6 +259,24 @@ function stemming(s) {
   }
   const uit = voor + tegen;
   const res = !aanwezig ? "nog geen stemmen" : !uit ? "geen geldige stemmen" : voor > uit / 2 ? "aangenomen" : "verworpen";
+  return { voor, tegen, blanco, aanwezig, noemer, res };
+}
+// Wat Vera naast de stukken uit het portaal meekrijgt: vergaderingen en stemmingen (geen namen of e-mailadressen).
+function portaalVoorVera() {
+  const r = [`Portaal van ${S.vve.naam}: ${S.leden.length} ${eN()}, totaal breukdelen ${nl(noemer())}, boekjaar ${S.vve.boekjaar}.`];
+  for (const v of [...S.vergaderingen].sort((a, b) => a.datum.localeCompare(b.datum))) {
+    r.push(`\nVergadering ${v.datum}${v.datum >= vandaag() ? " (gepland)" : ""}. Agenda: ${v.agenda.join("; ") || "-"}.`);
+    if (v.notities) r.push(`Notities: ${v.notities.slice(0, 1500)}`);
+    for (const st of S.stemmingen.filter((x) => x.vergadering_id === v.id)) {
+      const t = telling(st);
+      const per = S.leden.map((l) => `${l.appartement}=${st.stemmen[l.appartement] || "geen stem"}`).join(", ");
+      r.push(`Stemming "${st.voorstel}": voor ${nl(t.voor)}, tegen ${nl(t.tegen)}, blanco ${nl(t.blanco)}, aanwezig ${nl(t.aanwezig)} van ${nl(t.noemer)} (in breukdelen). Uitslag volgens het portaal (gewone meerderheid): ${t.res}. Per ${e1()}: ${per}.`);
+    }
+  }
+  return r.join("\n").slice(0, 12000);
+}
+function stemming(s) {
+  const { voor, tegen, blanco, aanwezig, noemer, res } = telling(s);
   return `<div class="akkoord"><p><strong>${esc(s.voorstel)}</strong></p>
   ${S.leden.map((l) => `<div class="stem"><strong>${eK()} ${esc(l.appartement)} <span style="font-weight:400;color:var(--muted)">(${nl(l.breukdeel)}/${nl(noemer)})</span></strong><div class="keus">
     ${["voor", "tegen", "blanco", "afwezig"].map((k) => `<button ${bestuur() ? "" : "disabled"} data-actie="stem" data-id="${s.id}" data-app="${esc(l.appartement)}" data-k="${k}" aria-pressed="${s.stemmen[l.appartement] === k}">${k}</button>`).join("")}</div></div>`).join("")}
@@ -304,13 +322,14 @@ function stukken() {
       <p style="font-size:.88rem;color:var(--muted)">Alleen PDF, tot 20 MB. Upload alleen stukken die alle leden mogen zien.</p>
       <input type="file" accept="application/pdf,.pdf" data-actie="stuk-upload"></details>` : ""}
     ${bestuur() && S.stukken.length ? `<div class="blok" style="margin-top:14px"><strong>Laat Vera de gegevens invullen</strong> <span class="ai-label">AI</span>
-      <p style="font-size:.88rem;color:var(--muted);margin:.3em 0 .6em">Vera zoekt in ${S.stukken.length > 10 ? "de nieuwste 10 stukken" : "de stukken"} naar breukdelen, begroting, saldi, herbouwwaarde, vergaderingen en onderhoud. U ziet eerst een voorstel en kiest zelf wat u overneemt.</p>
+      <p style="font-size:.88rem;color:var(--muted);margin:.3em 0 .6em">Vera zoekt in ${S.stukken.length > 25 ? "de nieuwste 25 stukken" : "de stukken"} naar breukdelen, begroting, saldi, herbouwwaarde, vergaderingen en onderhoud. U ziet eerst een voorstel en kiest zelf wat u overneemt.</p>
       <button class="btn ghost" data-actie="invullen"${S.invulBezig ? " disabled" : ""}>${S.invulBezig ? "Vera leest de stukken… (kan een minuut duren)" : "Gegevens laten invullen"}</button></div>` : ""}
   </div>
   <div class="kaart"><h2>Vraag Vera over de stukken <span class="ai-label">AI</span></h2>
-    ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest de gekozen stukken en noemt in welk stuk en artikel het antwoord staat. Controleer belangrijke antwoorden altijd in het stuk zelf. De stukken gaan daarvoor naar Anthropic (de maker van Claude).</p>
-    <form class="formulier" data-form="vera-stuk"><label>Zoeken in<select name="pad" data-actie="vera-kies">${meer ? `<option value="*"${gekozen === "*" ? " selected" : ""}>${S.stukken.length > 10 ? "De nieuwste 10 stukken" : `Alle stukken (${S.stukken.length})`}</option>` : ""}${S.stukken.map((f) => `<option value="${esc(f.pad)}"${f.pad === gekozen ? " selected" : ""}>${esc(f.naam)}</option>`).join("")}</select></label>
+    ${S.stukken.length ? `<p style="margin-top:0;color:var(--muted);font-size:.9rem">Vera leest de gekozen stukken en de vergaderingen en stemmingen in het portaal, en noemt waar het antwoord staat. Controleer belangrijke antwoorden altijd in het stuk zelf. De stukken gaan daarvoor naar Anthropic (de maker van Claude).</p>
+    <form class="formulier" data-form="vera-stuk"><label>Zoeken in<select name="pad" data-actie="vera-kies">${meer ? `<option value="*"${gekozen === "*" ? " selected" : ""}>${S.stukken.length > 25 ? "De nieuwste 25 stukken" : `Alle stukken (${S.stukken.length})`}</option>` : ""}${S.stukken.map((f) => `<option value="${esc(f.pad)}"${f.pad === gekozen ? " selected" : ""}>${esc(f.naam)}</option>`).join("")}</select></label>
     ${log.map((m) => `<div class="msg ${m.role === "user" ? "ik" : "vera"}" style="margin:0">${m.role === "user" ? esc(m.content) : opmaak(m.content)}</div>`).join("")}
+    ${log.length && !S.veraBezig ? `<p style="margin:0"><button class="klein-knop" type="button" data-actie="vera-wis" data-pad="${esc(gekozen)}">Nieuw gesprek</button></p>` : ""}
     ${S.veraBezig ? `<p style="color:var(--muted)">Vera leest ${gekozen === "*" ? "de stukken" : "het stuk"}…</p>` : ""}
     <label>Uw vraag<input name="vraag" required maxlength="600" placeholder="Bijv. wie betaalt onderhoud aan de slagboom?"></label><button class="btn" type="submit"${S.veraBezig ? " disabled" : ""}>Vraag</button></form>`
     : `<p style="color:var(--muted)">Upload eerst een stuk, bijvoorbeeld de splitsingsakte. Daarna kan Vera er vragen over beantwoorden.</p>`}
@@ -524,7 +543,7 @@ app.addEventListener("submit", async (e) => {
       try {
         const { data: { session } } = await sb.auth.getSession(); // vers token, ook na een uur open laten staan
         const r = await fetch(VERA_API + "/stuk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
-          body: JSON.stringify({ ...(pad === "*" ? { paden: S.stukken.slice(0, 10).map((f) => f.pad) } : { pad }), messages: log.slice(-8), vve: S.vve.naam, eenheid: eN() }) });
+          body: JSON.stringify({ ...(pad === "*" ? { paden: S.stukken.slice(0, 25).map((f) => f.pad) } : { pad }), messages: log.slice(-8), vve: S.vve.naam, eenheid: eN(), portaal: portaalVoorVera() }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.answer) throw new Error(j.error || "Vera kon geen antwoord geven.");
         log.push({ role: "assistant", content: j.answer });
@@ -615,13 +634,14 @@ document.addEventListener("click", async (e) => {
   }
   if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
   if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
+  if (a === "vera-wis") { delete S.vera[t.dataset.pad]; return teken(); }
   if (a === "voorstel-weg") { S.voorstel = null; return teken(); }
   if (a === "invullen") {
     S.invulBezig = true; S.voorstel = null; S.fout = S.melding = ""; teken();
     try {
       const { data: { session } } = await sb.auth.getSession();
       const r = await fetch(VERA_API + "/invullen", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
-        body: JSON.stringify({ paden: S.stukken.slice(0, 10).map((f) => f.pad), vve: S.vve.naam, eenheid: eN() }) });
+        body: JSON.stringify({ paden: S.stukken.slice(0, 25).map((f) => f.pad), vve: S.vve.naam, eenheid: eN() }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.voorstel) throw new Error(j.error || "Vera kon de stukken niet invullen.");
       S.voorstel = j.voorstel;
