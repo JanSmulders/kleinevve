@@ -254,6 +254,49 @@ async function stukVraag(request, env, headers, invullen = false) {
   }
 }
 
+// ---------- Portaal: mailadres van een VvE (ImprovMX-alias) doorsturen naar alle bestuursleden ----------
+// Het bestuur slaat in het portaal het adres op (bijv. heldenvangorkum@vvekit.nl). Deze route zet in ImprovMX
+// de alias op de e-mailadressen van het bestuur. Alles gaat met het token van de bestuurder, dus de
+// database-regels bepalen of hij dit mag. De API-sleutel van ImprovMX staat als secret IMPROVMX_API_KEY.
+const MAIL_DOMEIN = "vvekit.nl";
+const GERESERVEERD = new Set(["alv", "info", "admin", "postmaster", "abuse", "hostmaster", "webmaster", "noreply", "no-reply", "privacy", "support"]);
+
+async function mailadres(request, env, headers) {
+  if (!env.IMPROVMX_API_KEY) return json({ error: "Doorsturen is nog niet ingesteld (sleutel ontbreekt)." }, 503, headers);
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token || !env.SUPABASE_URL || !env.SUPABASE_KEY) return json({ error: "Niet ingelogd." }, 401, headers);
+  let body;
+  try { body = JSON.parse(await request.text()); } catch { return json({ error: "Ongeldig verzoek." }, 400, headers); }
+  const vve = String(body.vve_id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(vve)) return json({ error: "Onbekende VvE." }, 400, headers);
+
+  const sb = (pad, init = {}) => fetch(env.SUPABASE_URL + pad, { ...init, headers: { apikey: env.SUPABASE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" } });
+  const rij = await sb(`/rest/v1/vves?id=eq.${vve}&select=contact_email`);
+  const adres = String((rij.ok && (await rij.json())[0]?.contact_email) || "").toLowerCase();
+  const [lokaal, domein] = adres.split("@");
+  if (domein !== MAIL_DOMEIN) return json({ error: `Alleen adressen op @${MAIL_DOMEIN} kan ik doorsturen.` }, 400, headers);
+  if (!/^[a-z0-9][a-z0-9.-]{1,39}$/.test(lokaal) || GERESERVEERD.has(lokaal)) return json({ error: "Kies een ander mailadres; dit is gereserveerd of ongeldig." }, 400, headers);
+
+  const lijst = await sb("/rest/v1/rpc/bestuur_mails", { method: "POST", body: JSON.stringify({ v: vve }) });
+  if (!lijst.ok) return json({ error: "Alleen het bestuur kan het doorsturen instellen." }, 403, headers);
+  const mails = (await lijst.json()).filter((m) => /^[^@\s,]+@[^@\s,]+\.[^@\s,]+$/.test(m) && !m.endsWith("@" + MAIL_DOMEIN)).slice(0, 10);
+  if (!mails.length) return json({ error: "Er staat bij geen enkel bestuurslid een e-mailadres." }, 400, headers);
+
+  const mx = (pad, init = {}) => fetch(`https://api.improvmx.com/v4/domains/${MAIL_DOMEIN}/aliases${pad}`, { ...init,
+    headers: { Authorization: "Basic " + btoa("api:" + env.IMPROVMX_API_KEY), "Content-Type": "application/json" } });
+  const forward = mails.join(",");
+  const bestaand = await mx("/" + encodeURIComponent(lokaal));
+  const res = bestaand.ok
+    ? await mx("/" + (await bestaand.json()).alias.id, { method: "PUT", body: JSON.stringify({ forward }) })
+    : await mx("", { method: "POST", body: JSON.stringify({ alias: lokaal, forward }) });
+  if (!res.ok) {
+    const fout = await res.json().catch(() => ({}));
+    console.error(`ImprovMX ${res.status}: ${fout.message || ""}`);
+    return json({ error: "ImprovMX weigerde: " + (fout.message || res.status) }, 502, headers);
+  }
+  return json({ adres, naar: mails }, 200, headers);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "GET" || request.method === "HEAD") return testSite(new URL(request.url));
@@ -267,6 +310,7 @@ export default {
     if (!allowed.includes(origin)) return json({ error: "Niet toegestaan." }, 403, headers);
     if (!env.ANTHROPIC_API_KEY) return json({ error: "Nog niet ingesteld." }, 503, headers);
     const pad = new URL(request.url).pathname;
+    if (pad === "/mailadres") return mailadres(request, env, headers);
     if (pad === "/stuk" || pad === "/invullen") return stukVraag(request, env, headers, pad === "/invullen");
 
     const ip = request.headers.get("CF-Connecting-IP") || "onbekend";
