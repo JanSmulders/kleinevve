@@ -365,3 +365,16 @@ begin
 end $$;
 revoke all on function public.bericht_melding(uuid) from public, anon;
 grant execute on function public.bericht_melding(uuid) to authenticated;
+
+-- Migratie bericht_vera_antwoord: Vera geeft het lid direct een eerste antwoord uit de stukken (AI, gemarkeerd).
+-- De schrijver van het bericht slaat dat antwoord één keer op, binnen 15 minuten na versturen.
+alter table public.berichten add column vera_antwoord text;
+create or replace function public.vera_antwoord(b uuid, tekst text) returns void language plpgsql security definer set search_path = public as $$
+#variable_conflict use_variable
+begin
+  update berichten set vera_antwoord = left(tekst, 4000)
+   where id = b and user_id = auth.uid() and vera_antwoord is null and aangemaakt > now() - interval '15 minutes';
+  if not found then raise exception 'Dit bericht heeft al een antwoord van Vera'; end if;
+end $$;
+revoke all on function public.vera_antwoord(uuid, text) from public, anon;
+grant execute on function public.vera_antwoord(uuid, text) to authenticated;

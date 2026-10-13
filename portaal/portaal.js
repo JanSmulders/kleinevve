@@ -32,7 +32,7 @@ const vandaag = () => new Date().toISOString().slice(0, 10);
 const STANDAARD_AGENDA = ["Opening en vaststellen agenda", "Notulen vorige vergadering", "Jaarrekening en decharge bestuur", "Begroting en voorschotten", "Reservefonds en MJOP", "Besluiten over onderhoud", "Benoeming bestuur en kascommissie", "Rondvraag en sluiting"];
 
 // ---------- toestand ----------
-const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], berichten: [], stukken: [], vera: {}, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
+const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutaties: [], mjop: [], vergaderingen: [], stemmingen: [], akkoorden: [], wisverzoeken: [], berichten: [], stukken: [], vera: {}, concepten: {}, conceptBezig: null, veraBericht: null, tab: "overzicht", melding: "", fout: "", import: null, inlogModus: "wachtwoord" };
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const beheert = () => (S.beheer || []).includes(S.vve?.id); // beheerder zonder eigen eenheid
 const bestuur = () => ik()?.rol === "bestuur" || beheert();
@@ -118,6 +118,16 @@ async function opslaan(belofte, ok, mail = false) {
   await kiesVve(S.vve.id);
   const m = mail ? await doorsturen() : null;
   meld((ok || "Opgeslagen.") + (m ? " " + m.tekst : ""), !!m?.fout);
+}
+// Vera leest de stukken (max. 25) en de portaalgegevens en schrijft over een bericht van een lid.
+async function veraOverBericht(b, opdracht) {
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch(VERA_API + "/stuk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token },
+    body: JSON.stringify({ paden: S.stukken.slice(0, 25).map((f) => f.pad), vve: S.vve.naam, eenheid: eN(),
+      portaal: portaalVoorVera() + `\n\nBericht van een lid aan het bestuur:\nOnderwerp: ${b.onderwerp}\n${b.tekst}`, messages: [{ role: "user", content: opdracht }] }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.answer) throw new Error(j.error || "Vera kon geen antwoord geven.");
+  return j.answer;
 }
 // Een mailadres op @vvekit.nl stuurt de Worker (via ImprovMX) door naar alle bestuursleden met een e-mailadres.
 async function doorsturen() {
@@ -429,10 +439,12 @@ function berichten() {
     <span class="label${b.status === "open" ? " let" : ""}">${b.status === "open" ? (b.antwoord ? "beantwoord" : "nieuw") : "afgehandeld"}</span></p>
     <p style="margin:0;font-size:.85rem;color:var(--muted)">${beheer ? `Van ${b.afzender === "beheer" ? "de beheerder" : `${eK().toLowerCase()} ${esc(b.afzender)}`} · ` : ""}${tijd(b.aangemaakt)}</p>
     <p style="white-space:pre-line;margin:.5em 0">${esc(b.tekst)}</p>
-    ${beheer ? `<form class="formulier" data-form="antwoord" data-id="${b.id}"><label>Antwoord aan het lid<textarea name="antwoord" maxlength="4000">${esc(b.antwoord)}</textarea></label>
+    ${b.vera_antwoord ? `<div class="msg vera" style="margin:0 0 .6em"><strong>${beheer ? "Het lid kreeg dit antwoord van Vera (AI):" : "Eerste antwoord van Vera (AI, niet van het bestuur):"}</strong><br>${esc(b.vera_antwoord)}</div>` : !beheer && S.veraBericht === b.id ? `<p style="margin:0 0 .6em;font-size:.9rem">Vera zoekt een antwoord in de stukken…</p>` : ""}
+    ${beheer ? `<form class="formulier" data-form="antwoord" data-id="${b.id}"><label>Antwoord aan het lid<textarea name="antwoord" maxlength="4000">${esc(S.concepten[b.id] ?? b.antwoord)}</textarea></label>
+      ${S.concepten[b.id] !== undefined ? `<p style="margin:0;font-size:.85rem;color:var(--muted)">Concept van Vera (AI). Controleer het, pas het aan en kies Opslaan; pas dan ziet het lid het.</p>` : ""}
       <label style="display:flex;gap:.5em;align-items:center"><input type="checkbox" name="klaar" style="width:auto"${b.status === "afgehandeld" ? " checked" : ""}> Afgehandeld</label>
-      <p style="margin:0"><button class="btn ghost" type="submit">Opslaan</button> <button class="klein-knop" type="button" data-actie="weg" data-tabel="berichten" data-id="${b.id}">Verwijderen</button></p></form>`
-    : b.antwoord ? `<div class="msg vera" style="margin:0"><strong>Antwoord van het bestuur${b.beantwoord_op ? ` (${tijd(b.beantwoord_op)})` : ""}:</strong><br>${esc(b.antwoord)}</div>` : `<p style="margin:0;font-size:.85rem;color:var(--muted)">Nog geen antwoord.</p>`}</div>`;
+      <p style="margin:0"><button class="btn ghost" type="submit">Opslaan</button> ${S.stukken.length ? `<button class="klein-knop" type="button" data-actie="vera-concept" data-id="${b.id}"${S.conceptBezig ? " disabled" : ""}>${S.conceptBezig === b.id ? "Vera schrijft…" : "Concept door Vera"}</button> ` : ""}<button class="klein-knop" type="button" data-actie="weg" data-tabel="berichten" data-id="${b.id}">Verwijderen</button></p></form>`
+    : b.antwoord ? `<div class="msg vera" style="margin:0"><strong>Antwoord van het bestuur${b.beantwoord_op ? ` (${tijd(b.beantwoord_op)})` : ""}:</strong><br>${esc(b.antwoord)}</div>` : `<p style="margin:0;font-size:.85rem;color:var(--muted)">${b.vera_antwoord ? "Het bestuur leest uw bericht ook en vult aan als dat nodig is." : "Nog geen antwoord."}</p>`}</div>`;
   const mijn = S.berichten.filter((b) => b.user_id === S.sessie.user.id);
   const schrijf = `<div class="kaart"><h2>Bericht aan het bestuur</h2>
     <p style="margin-top:0;color:var(--muted);font-size:.9rem">Alleen het bestuur${S.beheer?.length ? " en de beheerder" : ""} van ${esc(S.vve.naam)} leest dit. U ziet hier ook het antwoord.${S.vve.contact_email ? ` Liever mailen? Dat kan naar <a href="mailto:${esc(S.vve.contact_email)}">${esc(S.vve.contact_email)}</a>.` : ""}</p>
@@ -561,7 +573,20 @@ app.addEventListener("submit", async (e) => {
   const f = e.target, d = Object.fromEntries(new FormData(f)), vve_id = S.vve?.id;
   switch (f.dataset.form) {
     case "voorstel": return voorstelOvernemen(d);
-    case "bericht": return opslaan(sb.from("berichten").insert({ vve_id, user_id: S.sessie.user.id, afzender: ik()?.appartement || (beheert() ? "beheer" : ""), onderwerp: d.onderwerp.trim(), tekst: d.tekst.trim() }), "Uw bericht is verstuurd naar het bestuur.");
+    case "bericht": {
+      const r = await sb.from("berichten").insert({ vve_id, user_id: S.sessie.user.id, afzender: ik()?.appartement || (beheert() ? "beheer" : ""), onderwerp: d.onderwerp.trim(), tekst: d.tekst.trim() }).select().single();
+      await opslaan(Promise.resolve(r), "Uw bericht is verstuurd naar het bestuur.");
+      if (r.error || !S.stukken.length) return;
+      // Vera geeft meteen een eerste antwoord uit de stukken; het bestuur leest mee en vult aan.
+      S.veraBericht = r.data.id; teken();
+      try {
+        const antwoord = await veraOverBericht(r.data, "Een lid stuurde het bericht hierboven aan het bestuur. Beantwoord het nu direct voor dit lid: kort en vriendelijk, in de u-vorm, op basis van de stukken en de portaalgegevens. Noem het stuk en artikel. Staat het antwoord er niet in, zeg dan kort dat het bestuur erop terugkomt. Beloof niets namens het bestuur. Geen aanhef; sluit af met „Vera (AI-assistent)”, niet namens het bestuur.");
+        const { error } = await sb.rpc("vera_antwoord", { b: r.data.id, tekst: antwoord });
+        if (error) throw new Error(error.message);
+        S.veraBericht = null; await kiesVve(S.vve.id);
+        return meld("Uw bericht is verstuurd naar het bestuur. Vera heeft alvast geantwoord.");
+      } catch (err) { console.warn("Vera-antwoord:", err.message); S.veraBericht = null; return meld("Uw bericht is verstuurd naar het bestuur. Vera kon nu geen antwoord geven; het bestuur antwoordt zelf."); }
+    }
     case "antwoord": return opslaan(sb.from("berichten").update({ antwoord: (d.antwoord || "").trim(), status: d.klaar ? "afgehandeld" : "open", beantwoord_op: (d.antwoord || "").trim() ? new Date().toISOString() : null }).eq("id", f.dataset.id), "Opgeslagen.");
     case "inloggen": {
       const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.ww });
@@ -684,6 +709,16 @@ document.addEventListener("click", async (e) => {
     const v = app.querySelector("form[data-form=vera-stuk] [name=vraag]");
     if (v) { v.scrollIntoView({ block: "center", behavior: "smooth" }); v.focus({ preventScroll: true }); }
     return;
+  }
+  if (a === "vera-concept") {
+    // Vera schrijft uit de stukken een concept-antwoord; het bestuur controleert en slaat het zelf op.
+    const b = S.berichten.find((x) => x.id === t.dataset.id);
+    if (!b || S.conceptBezig) return;
+    S.conceptBezig = b.id; S.fout = ""; S.melding = ""; teken();
+    try {
+      S.concepten[b.id] = await veraOverBericht(b, "Schrijf een concept-antwoord namens het bestuur op het bericht van het lid hierboven. Kort en vriendelijk, in de u-vorm. Noem het stuk en artikel waarop je je baseert. Staat het antwoord niet in de stukken, schrijf dan dat het bestuur erop terugkomt. Geef alleen de tekst van het antwoord.");
+    } catch (err) { S.fout = err.message === "Failed to fetch" ? "Vera is nu niet bereikbaar." : err.message; }
+    S.conceptBezig = null; return teken();
   }
   if (a === "vera-wis") { delete S.vera[t.dataset.pad]; return teken(); }
   if (a === "voorstel-weg") { S.voorstel = null; return teken(); }
