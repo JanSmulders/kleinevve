@@ -284,7 +284,8 @@ async function mailadres(request, env, headers) {
 
   const mx = (pad, init = {}) => fetch(`https://api.improvmx.com/v4/domains/${MAIL_DOMEIN}/aliases${pad}`, { ...init,
     headers: { Authorization: "Basic " + btoa("api:" + env.IMPROVMX_API_KEY), "Content-Type": "application/json" } });
-  const forward = mails.join(",");
+  // Ook naar Vera (Resend), zodat zij leden per mail kan antwoorden; alleen als dat is ingesteld.
+  const forward = [...mails, ...(env.RESEND_INBOUND && env.RESEND_API_KEY ? [lokaal + "@" + env.RESEND_INBOUND] : [])].join(",");
   // Opzoeken via de lijst (filter op naam); bijwerken kan alleen met het numerieke id.
   const zoek = await mx("?query=" + encodeURIComponent(lokaal) + "&limit=200");
   if (!zoek.ok) return json({ error: "ImprovMX gaf geen antwoord (" + zoek.status + ")." }, 502, headers);
@@ -300,9 +301,137 @@ async function mailadres(request, env, headers) {
   return json({ adres, naar: mails }, 200, headers);
 }
 
+// ---------- Vera beantwoordt mail aan het VvE-adres ----------
+// ImprovMX stuurt naam@vvekit.nl door naar het bestuur én naar naam@<RESEND_INBOUND>. Resend meldt elke
+// binnenkomende mail met een ondertekende webhook op /inbound. Is de afzender lid van die VvE, dan zet de Worker
+// de mail als bericht in het portaal, laat Vera antwoorden uit de stukken en mailt dat antwoord naar het lid.
+// Antwoorden van het lid gaan naar het VvE-adres, dus ook weer naar het bestuur.
+// Secrets: RESEND_API_KEY, RESEND_WEBHOOK_SECRET, SUPABASE_SECRET_KEY. Variabele: RESEND_INBOUND.
+const MAIL_SYSTEM = STUK_SYSTEM + `
+
+Je beantwoordt nu een e-mail van een eigenaar aan het mailadres van zijn VvE. Het bestuur krijgt dezelfde mail en reageert zelf als dat nodig is.
+- Begin zonder aanhef (die zet het portaal er zelf boven) en sluit af met "Vera (AI-assistent, niet het bestuur)".
+- Beantwoord alleen wat je uit de stukken of de gegevens van deze eigenaar kunt halen. Beloof niets namens het bestuur; gaat het om een verzoek, klacht of beslissing, zeg dan dat het bestuur de mail heeft en zelf reageert.
+- Is de mail geen vraag (bijvoorbeeld alleen een bedankje, een mededeling of een automatisch bericht), antwoord dan met precies GEEN_ANTWOORD en verder niets.
+- Gebruik geen opmaak met sterretjes of kopjes: het wordt een gewone e-mail.`;
+
+async function svixGeldig(raw, request, geheim) {
+  const id = request.headers.get("svix-id"), tijd = request.headers.get("svix-timestamp"), handtekeningen = request.headers.get("svix-signature") || "";
+  if (!id || !tijd || !geheim || Math.abs(Date.now() / 1000 - Number(tijd)) > 300) return false;
+  const sleutel = Uint8Array.from(atob(geheim.replace(/^whsec_/, "")), (c) => c.charCodeAt(0));
+  const k = await crypto.subtle.importKey("raw", sleutel, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(`${id}.${tijd}.${raw}`)));
+  const verwacht = btoa(String.fromCharCode(...mac));
+  return handtekeningen.split(" ").some((h) => {
+    const s = h.split(",")[1] || "";
+    if (s.length !== verwacht.length) return false;
+    let verschil = 0;
+    for (let i = 0; i < s.length; i++) verschil |= s.charCodeAt(i) ^ verwacht.charCodeAt(i);
+    return verschil === 0;
+  });
+}
+
+const adresUit = (x) => (String(x || "").match(/<([^<>\s]+@[^<>\s]+)>/)?.[1] || String(x || "").trim()).toLowerCase();
+
+// Platte tekst van de mail, zonder het geciteerde eerdere bericht.
+function mailTekst(inhoud) {
+  let t = inhoud.text || String(inhoud.html || "").replace(/<(br|\/p|\/div|\/li)[^>]*>/gi, "\n").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'");
+  t = t.split(/\n[^\n]{0,20}(Op .{4,200}schreef|On .{4,200}wrote|-{2,} ?(Oorspronkelijk|Original|Doorgestuurd|Forwarded))/)[0];
+  return t.split("\n").filter((r) => !r.startsWith(">")).join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000);
+}
+
+function isAutomatisch(kop) {
+  const h = Object.fromEntries(Object.entries(kop || {}).map(([k, v]) => [k.toLowerCase(), String(v).toLowerCase()]));
+  return (h["auto-submitted"] && h["auto-submitted"] !== "no") || /bulk|list|junk|auto/.test(h["precedence"] || "")
+    || "list-id" in h || "x-autoreply" in h || "x-autorespond" in h;
+}
+
+const html = (t) => t.split(/\n{2,}/).map((p) => "<p>" + p.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") + "</p>").join("\n");
+
+async function verwerkMail(env, data) {
+  const resend = (pad, init = {}) => fetch("https://api.resend.com" + pad, { ...init, headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" } });
+  const sb = (pad, init = {}) => fetch(env.SUPABASE_URL + pad, { ...init, headers: { apikey: env.SUPABASE_SECRET_KEY, "Content-Type": "application/json" } });
+  const log = (m) => console.log("inbound " + data.email_id + ": " + m);
+
+  const van = adresUit(data.from);
+  if (!van || van.endsWith("@" + MAIL_DOMEIN) || van.endsWith("@" + env.RESEND_INBOUND) || /^(no-?reply|mailer-daemon|postmaster)@/.test(van)) return log("afzender overgeslagen");
+  // Het VvE-adres: rechtstreeks in To/Cc, of het doorgestuurde adres op het Resend-domein.
+  const aan = [...new Set([...(data.to || []), ...(data.cc || []), ...(data.received_for || [])].map(adresUit)
+    .map((a) => a.endsWith("@" + env.RESEND_INBOUND) ? a.split("@")[0] + "@" + MAIL_DOMEIN : a).filter((a) => a.endsWith("@" + MAIL_DOMEIN)))];
+  if (!aan.length) return log("geen VvE-adres");
+
+  const ophalen = await resend("/emails/receiving/" + encodeURIComponent(data.email_id));
+  if (!ophalen.ok) return log("mail ophalen lukte niet (" + ophalen.status + ")");
+  const inhoud = await ophalen.json();
+  if (isAutomatisch(inhoud.headers)) return log("automatisch bericht");
+  const echt = inhoud.authentication;
+  if (echt && echt.dkim !== "pass" && echt.dmarc !== "pass") return log("afzender niet bevestigd (dkim " + echt.dkim + ", dmarc " + echt.dmarc + ")");
+  const tekst = mailTekst(inhoud);
+
+  const r = await sb("/rest/v1/rpc/vera_mail_in", { method: "POST", body: JSON.stringify({ p_mail_id: data.email_id, p_aan: aan, p_van: van, p_onderwerp: data.subject || "", p_tekst: tekst }) });
+  if (!r.ok) return log("database " + r.status + " " + (await r.text()).slice(0, 200));
+  const info = await r.json();
+  if (info.reden) return log(info.reden);
+  if (!tekst) return log("lege mail");
+
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1 });
+  const docs = [];
+  for (const pad of info.paden || []) {
+    const pdf = await sb(`/storage/v1/object/authenticated/stukken/${pad.split("/").map(encodeURIComponent).join("/")}`);
+    if (!pdf.ok || Number(pdf.headers.get("content-length") || 0) > MAX_PDF) continue;
+    const naam = await sleutelVoor(pad, pdf.headers.get("etag") || pdf.headers.get("last-modified") || "");
+    docs.push({ type: "document", source: { type: "file", file_id: await bestandId(client, naam, pdf) }, title: pad.split("/")[1] });
+  }
+  if (docs.length) docs[docs.length - 1].cache_control = { type: "ephemeral" };
+  // De naam van het lid gaat niet naar Anthropic; de aanhef zet de Worker er zelf boven.
+  const over = `Mail aan ${info.vve_naam}. De afzender is eigenaar van ${info.eenheid || "eenheid"} ${info.appartement} met breukdeel ${info.breukdeel}.`;
+  const response = await client.messages.create({
+    model: env.MODEL || "claude-haiku-5-5",
+    max_tokens: 3000,
+    output_config: { effort: "low" },
+    system: MAIL_SYSTEM,
+    messages: [{ role: "user", content: [...docs, { type: "text", text: (docs.length ? "" : "Er zijn nog geen stukken van deze VvE in het portaal.\n\n") + over + "\n\nOnderwerp: " + (data.subject || "") + "\n\n" + tekst }] }],
+  });
+  const kern = response.stop_reason === "refusal" ? "" : response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  if (!kern || kern.includes("GEEN_ANTWOORD")) {
+    await sb("/rest/v1/rpc/vera_mail_antwoord", { method: "POST", body: JSON.stringify({ p_bericht: info.bericht, p_tekst: "(Vera heeft deze mail niet beantwoord: er stond geen vraag in.)" }) });
+    return log("geen antwoord nodig");
+  }
+  const antwoord = `Beste ${info.naam || "eigenaar"},\n\n` + kern.replace(/^(beste|geachte|hallo|hoi)\b[^\n]{0,60}\n+/i, ""); // voor het geval Vera toch een aanhef schrijft
+
+  const voet = `Dit antwoord is automatisch geschreven door Vera, een AI-assistent (Claude, van Anthropic), op basis van de stukken van ${info.vve_naam}. Het bestuur heeft uw mail ook ontvangen. Antwoorden op deze mail gaan naar het bestuur.`;
+  const onderwerp = /^re:/i.test(data.subject || "") ? data.subject : "Re: " + (data.subject || "uw mail");
+  const verstuur = await resend("/emails", { method: "POST", body: JSON.stringify({
+    from: `Vera, ${String(info.vve_naam).replace(/["<>,]/g, "").trim()} <portaal@${MAIL_DOMEIN}>`,
+    to: [van],
+    reply_to: info.adres,
+    subject: onderwerp.slice(0, 200),
+    text: antwoord + "\n\n--\n" + voet,
+    html: html(antwoord) + `\n<p style="color:#6b7570;font-size:12px">${voet}</p>`,
+    headers: { "Auto-Submitted": "auto-replied", ...(data.message_id ? { "In-Reply-To": data.message_id, References: data.message_id } : {}) },
+  }) });
+  if (!verstuur.ok) return log("versturen lukte niet " + verstuur.status + " " + (await verstuur.text()).slice(0, 200));
+  await sb("/rest/v1/rpc/vera_mail_antwoord", { method: "POST", body: JSON.stringify({ p_bericht: info.bericht, p_tekst: antwoord }) });
+  log("beantwoord");
+}
+
+async function inbound(request, env, ctx) {
+  if (!env.RESEND_API_KEY || !env.RESEND_WEBHOOK_SECRET || !env.SUPABASE_SECRET_KEY || !env.RESEND_INBOUND || !env.ANTHROPIC_API_KEY) return new Response("niet ingesteld", { status: 503 });
+  const raw = await request.text();
+  if (raw.length > 100000 || !(await svixGeldig(raw, request, env.RESEND_WEBHOOK_SECRET))) return new Response("ongeldig", { status: 401 });
+  let event;
+  try { event = JSON.parse(raw); } catch { return new Response("ongeldig", { status: 400 }); }
+  if (event.type !== "email.received" || !event.data?.email_id) return new Response("ok");
+  // Meteen bevestigen; Vera werkt daarna verder. Een herhaalde melding wordt in de database herkend (mail_id).
+  ctx.waitUntil(verwerkMail(env, event.data).catch((e) => console.error("inbound " + event.data.email_id + ": " + (e?.message || e))));
+  return new Response("ok");
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "GET" || request.method === "HEAD") return testSite(new URL(request.url));
+    if (request.method === "POST" && new URL(request.url).pathname === "/inbound") return inbound(request, env, ctx);
 
     const allowed = (env.ALLOWED_ORIGINS || "https://vvekit.nl").split(",").map((s) => s.trim());
     const origin = request.headers.get("Origin") || "";
