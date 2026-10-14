@@ -376,13 +376,24 @@ async function verwerkMail(env, data) {
   if (!tekst) return log("lege mail");
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1 });
-  const docs = [];
-  for (const pad of info.paden || []) {
-    const pdf = await sb(`/storage/v1/object/authenticated/stukken/${pad.split("/").map(encodeURIComponent).join("/")}`);
-    if (!pdf.ok || Number(pdf.headers.get("content-length") || 0) > MAX_PDF) continue;
-    const naam = await sleutelVoor(pad, pdf.headers.get("etag") || pdf.headers.get("last-modified") || "");
-    docs.push({ type: "document", source: { type: "file", file_id: await bestandId(client, naam, pdf) }, title: pad.split("/")[1] });
-  }
+  // Snel blijven: de webhook geeft ons hooguit ~30 seconden. Eén keer de lijst met al geüploade stukken ophalen,
+  // en alleen ontbrekende stukken downloaden en uploaden, allemaal tegelijk.
+  const bekend = new Map();
+  for await (const f of client.files.list({ limit: 1000 })) bekend.set(f.filename, f.id);
+  const docs = (await Promise.all((info.stukken || []).filter((s) => s.grootte <= MAX_PDF).map(async (s) => {
+    try {
+      const naam = await sleutelVoor(s.pad, s.versie);
+      let id = bestandIds.get(naam) || bekend.get(naam);
+      if (!id) {
+        const pdf = await sb(`/storage/v1/object/authenticated/stukken/${s.pad.split("/").map(encodeURIComponent).join("/")}`);
+        if (!pdf.ok) return null;
+        id = (await client.files.upload({ file: await toFile(pdf, naam, { type: "application/pdf" }), expires_in_seconds: 7 * 24 * 3600 })).id;
+      }
+      bestandIds.set(naam, id);
+      return { type: "document", source: { type: "file", file_id: id }, title: s.pad.split("/")[1] };
+    } catch (e) { log("stuk overgeslagen: " + s.pad.split("/")[1] + " " + (e?.message || e)); return null; }
+  }))).filter(Boolean);
+  log(docs.length + " stukken");
   if (docs.length) docs[docs.length - 1].cache_control = { type: "ephemeral" };
   // De naam van het lid gaat niet naar Anthropic; de aanhef zet de Worker er zelf boven.
   const over = `Mail aan ${info.vve_naam}. De afzender is eigenaar van ${info.eenheid || "eenheid"} ${info.appartement} met breukdeel ${info.breukdeel}.`;
