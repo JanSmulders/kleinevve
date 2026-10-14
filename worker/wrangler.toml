@@ -15,3 +15,6 @@ ALLOWED_ORIGINS = "https://vvekit.nl,https://www.vvekit.nl,https://test.vvekit.n
 # Supabase-project van het portaal: Vera haalt een stuk alleen op met het token van de ingelogde gebruiker (RLS).
 SUPABASE_URL = "https://nevkccqxidibpthxowyh.supabase.co"
 SUPABASE_KEY = "sb_publishable_vP7uUh1wM9WoTkShwNsEWg_8ikU4UlC"
+# Ontvangstdomein van Resend (team vvekit). ImprovMX stuurt VvE-mail ook naar <alias>@dit-domein, zodat Vera
+# leden per mail kan antwoorden (route /inbound). Geen geheim: alleen mail van leden wordt beantwoord.
+RESEND_INBOUND = "aeclaruaka.resend.app"
