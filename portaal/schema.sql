@@ -420,3 +420,5 @@ revoke all on function public.vera_mail_in(text, text[], text, text, text) from 
 revoke all on function public.vera_mail_antwoord(uuid, text) from public, anon, authenticated;
 grant execute on function public.vera_mail_in(text, text[], text, text, text) to service_role;
 grant execute on function public.vera_mail_antwoord(uuid, text) to service_role;
+
+-- 2026-10-14 vera_mail_stukken_versie (toegepast): vera_mail_in geeft stukken met versie (eTag) en grootte terug, zodat de Worker niet hoeft te downloaden.
