@@ -417,7 +417,9 @@ async function verwerkMail(env, data) {
 }
 
 async function inbound(request, env, ctx) {
-  if (!env.RESEND_API_KEY || !env.RESEND_WEBHOOK_SECRET || !env.SUPABASE_SECRET_KEY || !env.RESEND_INBOUND || !env.ANTHROPIC_API_KEY) return new Response("niet ingesteld", { status: 503 });
+  // Alleen de namen van ontbrekende instellingen tonen (nooit waarden), zodat de eigenaar ziet wat er nog mist.
+  const mist = ["RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "SUPABASE_SECRET_KEY", "RESEND_INBOUND", "ANTHROPIC_API_KEY"].filter((n) => !env[n]);
+  if (mist.length) return new Response("niet ingesteld: " + mist.join(", "), { status: 503 });
   const raw = await request.text();
   if (raw.length > 100000 || !(await svixGeldig(raw, request, env.RESEND_WEBHOOK_SECRET))) return new Response("ongeldig", { status: 401 });
   let event;
