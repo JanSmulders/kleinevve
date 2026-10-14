@@ -378,3 +378,45 @@ begin
 end $$;
 revoke all on function public.vera_antwoord(uuid, text) from public, anon;
 grant execute on function public.vera_antwoord(uuid, text) to authenticated;
+
+-- 2026-10-14 vera_mail (toegepast): Vera beantwoordt mail aan het VvE-adres (Worker /inbound, alleen service_role)
+alter table public.berichten add column if not exists bron text not null default 'portaal' check (bron in ('portaal', 'mail'));
+alter table public.berichten add column if not exists mail_id text unique;
+alter table public.berichten add column if not exists mail_van text;
+
+create or replace function public.vera_mail_in(p_mail_id text, p_aan text[], p_van text, p_onderwerp text, p_tekst text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v vves%rowtype;
+  l leden%rowtype;
+  b uuid;
+begin
+  select * into v from vves where lower(contact_email) = any (select lower(x) from unnest(p_aan) x) limit 1;
+  if not found then return jsonb_build_object('reden', 'onbekend VvE-adres'); end if;
+  select * into l from leden where vve_id = v.id and lower(email) = lower(p_van) limit 1;
+  if not found then return jsonb_build_object('reden', 'afzender is geen lid'); end if;
+  if (select count(*) from berichten where vve_id = v.id and bron = 'mail' and aangemaakt > now() - interval '1 day') >= 30
+     or (select count(*) from berichten where mail_van = lower(p_van) and aangemaakt > now() - interval '1 day') >= 5 then
+    return jsonb_build_object('reden', 'te veel mails vandaag');
+  end if;
+  insert into berichten (vve_id, user_id, afzender, onderwerp, tekst, bron, mail_id, mail_van)
+  values (v.id, l.user_id, left(coalesce(nullif(l.naam, ''), l.email) || ' (per mail)', 200),
+          left(coalesce(nullif(trim(p_onderwerp), ''), '(geen onderwerp)'), 120), left(coalesce(nullif(trim(p_tekst), ''), '(lege mail)'), 4000), 'mail', p_mail_id, lower(p_van))
+  on conflict (mail_id) do nothing
+  returning id into b;
+  if b is null then return jsonb_build_object('reden', 'al verwerkt'); end if;
+  return jsonb_build_object('bericht', b, 'vve', v.id, 'vve_naam', v.naam, 'eenheid', v.eenheid, 'adres', v.contact_email,
+    'naam', coalesce(nullif(l.naam, ''), ''), 'appartement', l.appartement, 'breukdeel', l.breukdeel,
+    'paden', coalesce((select jsonb_agg(name) from (select name from storage.objects where bucket_id = 'stukken'
+      and name like v.id::text || '/%' and name not like '%/.emptyFolderPlaceholder' order by created_at desc limit 25) s), '[]'::jsonb));
+end $$;
+
+create or replace function public.vera_mail_antwoord(p_bericht uuid, p_tekst text)
+returns void language sql security definer set search_path = public as $$
+  update berichten set vera_antwoord = left(p_tekst, 4000) where id = p_bericht and bron = 'mail' and vera_antwoord is null;
+$$;
+
+revoke all on function public.vera_mail_in(text, text[], text, text, text) from public, anon, authenticated;
+revoke all on function public.vera_mail_antwoord(uuid, text) from public, anon, authenticated;
+grant execute on function public.vera_mail_in(text, text[], text, text, text) to service_role;
+grant execute on function public.vera_mail_antwoord(uuid, text) to service_role;
