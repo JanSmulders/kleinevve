@@ -202,6 +202,11 @@ async function stukVraag(request, env, headers, invullen = false) {
     || new Set(paden.map((x) => x.split("/")[0])).size !== 1) return json({ error: "Onbekend stuk." }, 400, headers);
   const messages = invullen ? [{ role: "user", content: "" }] : cleanMessages(body.messages);
   if (!messages) return json({ error: "Ongeldig gesprek." }, 400, headers);
+  if (invullen) { // invullen is werk voor het bestuur (en kost meer); leden stellen alleen vragen
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/is_bestuur`, { method: "POST", body: JSON.stringify({ v: paden[0].split("/")[0] }),
+      headers: { apikey: env.SUPABASE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" } });
+    if (!r.ok || (await r.json()) !== true) return json({ error: "Alleen het bestuur kan Vera de stukken laten invullen." }, 403, headers);
+  }
 
   // Stukken ophalen met het token van de eigenaar: lukt alleen als hij lid is van die VvE.
   const pdfs = await Promise.all(paden.map((pad) => fetch(`${env.SUPABASE_URL}/storage/v1/object/authenticated/stukken/${pad.split("/").map(encodeURIComponent).join("/")}`,
@@ -259,7 +264,8 @@ async function stukVraag(request, env, headers, invullen = false) {
 // de alias op de e-mailadressen van het bestuur. Alles gaat met het token van de bestuurder, dus de
 // database-regels bepalen of hij dit mag. De API-sleutel van ImprovMX staat als secret IMPROVMX_API_KEY.
 const MAIL_DOMEIN = "vvekit.nl";
-const GERESERVEERD = new Set(["alv", "info", "admin", "postmaster", "abuse", "hostmaster", "webmaster", "noreply", "no-reply", "privacy", "support"]);
+const GERESERVEERD = new Set(["alv", "info", "admin", "postmaster", "abuse", "hostmaster", "webmaster", "noreply", "no-reply", "privacy", "support",
+  "portaal", "vera", "test", "jan", "bestuur", "beheer", "contact", "hallo", "mail", "security", "billing"]);
 
 async function mailadres(request, env, headers) {
   if (!env.IMPROVMX_API_KEY) return json({ error: "Doorsturen is nog niet ingesteld (sleutel ontbreekt)." }, 503, headers);
@@ -290,6 +296,10 @@ async function mailadres(request, env, headers) {
   const zoek = await mx("?query=" + encodeURIComponent(lokaal) + "&limit=200");
   if (!zoek.ok) return json({ error: "ImprovMX gaf geen antwoord (" + zoek.status + ")." }, 502, headers);
   const bestaand = ((await zoek.json()).aliases || []).find((a) => a.alias === lokaal);
+  // Een bestaand adres alleen overschrijven als het al van deze VvE is (stuurt naar Vera of naar dit bestuur).
+  const oud = String(bestaand?.forward || "").toLowerCase().split(/[,\s]+/);
+  if (bestaand && !oud.includes(lokaal + "@" + String(env.RESEND_INBOUND || "-")) && !mails.some((m) => oud.includes(m.toLowerCase())))
+    return json({ error: "Dit mailadres is al in gebruik. Kies een ander adres." }, 409, headers);
   const res = bestaand
     ? await mx("/" + bestaand.id, { method: "PUT", body: JSON.stringify({ forward }) })
     : await mx("", { method: "POST", body: JSON.stringify({ alias: lokaal, forward }) });
@@ -367,7 +377,9 @@ async function verwerkMail(env, data) {
   const inhoud = await ophalen.json();
   if (isAutomatisch(inhoud.headers)) return log("automatisch bericht");
   const echt = inhoud.authentication;
-  if (echt && echt.dkim !== "pass" && echt.dmarc !== "pass") return log("afzender niet bevestigd (dkim " + echt.dkim + ", dmarc " + echt.dmarc + ")");
+  // Alleen DMARC "pass" bewijst dat de mail echt van het domein van de afzender komt. DKIM alleen niet:
+  // een geldige handtekening van een ander domein met het adres van een lid als afzender zou dan ook doorgaan.
+  if (echt?.dmarc !== "pass") return log("afzender niet bevestigd (dkim " + echt?.dkim + ", dmarc " + echt?.dmarc + ")");
   const tekst = mailTekst(inhoud);
 
   const r = await sb("/rest/v1/rpc/vera_mail_in", { method: "POST", body: JSON.stringify({ p_mail_id: data.email_id, p_aan: aan, p_van: van, p_onderwerp: data.subject || "", p_tekst: tekst }) });
