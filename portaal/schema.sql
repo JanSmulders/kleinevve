@@ -422,3 +422,119 @@ grant execute on function public.vera_mail_in(text, text[], text, text, text) to
 grant execute on function public.vera_mail_antwoord(uuid, text) to service_role;
 
 -- 2026-10-14 vera_mail_stukken_versie (toegepast): vera_mail_in geeft stukken met versie (eTag) en grootte terug, zodat de Worker niet hoeft te downloaden.
+
+-- 2026-10-15 portaal_beveiliging: privacy en beveiliging vóór live (herkeuring 14 oktober).
+
+-- 1. Betalingen: een lid leest alleen de mutaties van zijn eigen eenheid en algemene uitgaven; het bestuur alles.
+create or replace function public.mijn_eenheden(v uuid) returns setof text
+language sql stable security definer set search_path = public as $$
+  select appartement from leden where vve_id = v and user_id = auth.uid();
+$$;
+revoke all on function public.mijn_eenheden(uuid) from public, anon;
+grant execute on function public.mijn_eenheden(uuid) to authenticated;
+
+drop policy "leden lezen" on public.mutaties;
+create policy "bestuur leest alles, lid eigen eenheid" on public.mutaties for select to authenticated
+  using (is_bestuur(vve_id) or (is_lid(vve_id) and (
+    appartement in (select mijn_eenheden(vve_id))
+    or (appartement is null and bedrag < 0 and post <> 'Voorschot'))));
+
+-- Totalen voor leden: saldo, uitgaven per post en hoeveel eenheden deze maand hun voorschot betaalden.
+create or replace function public.geld_totalen(v uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare j int; t numeric; n numeric; mnd text := to_char(now() at time zone 'Europe/Amsterdam', 'YYYY-MM');
+begin
+  if not is_lid(v) then raise exception 'Geen lid van deze VvE'; end if;
+  select boekjaar into j from vves where id = v;
+  t := coalesce((select sum(b.bedrag) from begroting b where b.vve_id = v and b.jaar = j), 0)
+     + coalesce((select sum(m.kosten / m.levensduur) from mjop m where m.vve_id = v), 0);
+  n := coalesce(nullif((select sum(l.breukdeel) from leden l where l.vve_id = v), 0), 1);
+  return jsonb_build_object(
+    'jaar', j,
+    'aantal', (select count(*) from mutaties m where m.vve_id = v and extract(year from m.datum) = j),
+    'som', coalesce((select sum(m.bedrag) from mutaties m where m.vve_id = v and extract(year from m.datum) = j), 0),
+    'per_post', coalesce((select jsonb_object_agg(x.post, x.s) from (select m.post, sum(m.bedrag) s from mutaties m
+                 where m.vve_id = v and extract(year from m.datum) = j group by m.post) x), '{}'::jsonb),
+    'betaald_maand', (select count(*) from leden l where l.vve_id = v and t * l.breukdeel / n / 12 > 0
+       and coalesce((select sum(m.bedrag) from mutaties m where m.vve_id = v and m.post = 'Voorschot'
+                      and m.appartement = l.appartement and to_char(m.datum, 'YYYY-MM') = mnd), 0) >= t * l.breukdeel / n / 12 - 0.01));
+end $$;
+revoke all on function public.geld_totalen(uuid) from public, anon;
+grant execute on function public.geld_totalen(uuid) to authenticated;
+
+-- 2. E-mailadressen van leden: alleen voor het bestuur (via leden_emails); leden lezen de andere kolommen.
+revoke select on public.leden from anon, authenticated;
+grant select (id, vve_id, appartement, breukdeel, naam, user_id, rol) on public.leden to authenticated;
+create or replace function public.leden_emails(v uuid) returns table (id uuid, email text)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not is_bestuur(v) then raise exception 'Alleen het bestuur'; end if;
+  return query select l.id, l.email from leden l where l.vve_id = v;
+end $$;
+revoke all on function public.leden_emails(uuid) from public, anon;
+grant execute on function public.leden_emails(uuid) to authenticated;
+
+-- 3. Berichten: een lid kan alleen een gewoon portaalbericht onder zijn eigen eenheid insturen.
+drop policy "lid stuurt bericht" on public.berichten;
+create policy "lid stuurt bericht" on public.berichten for insert to authenticated
+  with check (user_id = auth.uid() and is_lid(vve_id) and status = 'open' and antwoord = '' and bron = 'portaal'
+    and mail_id is null and mail_van is null and vera_antwoord is null and gemeld is null and beantwoord_op is null
+    and aangemaakt between now() - interval '1 minute' and now() + interval '1 minute'
+    and (afzender in (select mijn_eenheden(vve_id))
+         or (afzender = 'beheer' and exists (select 1 from vve_beheer b where b.vve_id = berichten.vve_id and b.user_id = auth.uid()))));
+
+create or replace function public.vera_antwoord(b uuid, tekst text) returns void
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_variable
+begin
+  update berichten set vera_antwoord = left(tekst, 4000)
+   where id = b and user_id = auth.uid() and bron = 'portaal' and vera_antwoord is null and aangemaakt > now() - interval '15 minutes';
+  if not found then raise exception 'Dit bericht heeft al een antwoord van Vera'; end if;
+end $$;
+
+-- 4. Advisors: ongebruikte meldingsfunctie dicht, vaste search_path.
+revoke all on function public.bericht_melding(uuid) from public, anon, authenticated;
+alter function public.vve_uit_pad(text) set search_path = '';
+
+-- 5. Startwachtwoord: accounts van het bestuur krijgen een vlag; het portaal laat de eigenaar eerst een eigen wachtwoord kiezen.
+create or replace function public.maak_account(p_lid uuid, p_wachtwoord text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare l record; e text; nieuw uuid := gen_random_uuid();
+begin
+  select * into l from leden where id = p_lid;
+  if l is null then raise exception 'Appartement niet gevonden'; end if;
+  if not is_bestuur(l.vve_id) then raise exception 'Alleen het bestuur kan accounts maken'; end if;
+  if l.user_id is not null then raise exception 'Dit appartement heeft al een account'; end if;
+  e := lower(trim(coalesce(l.email, '')));
+  if e = '' then raise exception 'Zet eerst een e-mailadres bij dit appartement'; end if;
+  if length(coalesce(p_wachtwoord, '')) < 8 then raise exception 'Kies een wachtwoord van minstens 8 tekens'; end if;
+  if exists (select 1 from auth.users where lower(email) = e) then
+    raise exception 'Dit e-mailadres heeft al een account. De eigenaar kan inloggen met zijn eigen wachtwoord of via een e-maillink.';
+  end if;
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+    confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current, reauthentication_token)
+  values ('00000000-0000-0000-0000-000000000000', nieuw, 'authenticated', 'authenticated', e,
+    crypt(p_wachtwoord, gen_salt('bf')), now(),
+    '{"provider":"email","providers":["email"]}', '{"startwachtwoord":true}', now(), now(), '', '', '', '', '', '');
+  insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+  values (gen_random_uuid(), nieuw, nieuw::text, 'email',
+    jsonb_build_object('sub', nieuw::text, 'email', e, 'email_verified', true, 'phone_verified', false), now(), now(), now());
+  update leden set user_id = nieuw where id = p_lid;
+  return l.appartement;
+end $$;
+
+-- 6. Nieuwe accounts (maillink) alleen voor adressen die bij een VvE staan of beheerder zijn.
+-- Aanzetten in Supabase: Authentication > Hooks > Before User Created > Postgres > public.voor_nieuwe_gebruiker.
+create or replace function public.voor_nieuwe_gebruiker(event jsonb) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare e text := lower(trim(coalesce(event->'user'->>'email', '')));
+begin
+  if e <> '' and (exists (select 1 from leden where lower(email) = e) or exists (select 1 from beheerders where lower(email) = e)) then
+    return '{}'::jsonb;
+  end if;
+  return jsonb_build_object('error', jsonb_build_object('http_code', 403,
+    'message', 'Dit e-mailadres staat bij geen enkele VvE. Vraag het bestuur om het bij uw eenheid te zetten.'));
+end $$;
+revoke all on function public.voor_nieuwe_gebruiker(jsonb) from public, anon, authenticated;
+grant execute on function public.voor_nieuwe_gebruiker(jsonb) to supabase_auth_admin;

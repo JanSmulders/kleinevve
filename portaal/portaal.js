@@ -36,6 +36,7 @@ const S = { sessie: null, vves: [], vve: null, leden: [], begroting: [], mutatie
 const ik = () => S.leden.find((l) => l.user_id === S.sessie?.user?.id);
 const beheert = () => (S.beheer || []).includes(S.vve?.id); // beheerder zonder eigen eenheid
 const bestuur = () => ik()?.rol === "bestuur" || beheert();
+const startwachtwoord = () => !!S.sessie?.user?.user_metadata?.startwachtwoord; // account gemaakt door het bestuur
 
 function meld(tekst, fout = false) { S.melding = fout ? "" : tekst; S.fout = fout ? tekst : ""; teken(); }
 
@@ -62,7 +63,13 @@ function cijfers() {
     return { ...l, pm, verwacht: pm * maanden, ontvangen, verschil: ontvangen - pm * maanden, dezeMaand };
   });
   const werkelijk = (post) => -muts.filter((m) => m.post === post).reduce((s, m) => s + Number(m.bedrag), 0);
-  return { jaar, mjop, reservering, minimum, posten, vast, totaal, noemer, muts, saldo, reserve, maanden, perLid, werkelijk };
+  const t = S.totalen;
+  if (t) { // lid: saldi en uitgaven over alle mutaties, berekend door de database
+    const post = (p) => Number(t.per_post[p] || 0);
+    return { jaar, mjop, reservering, minimum, posten, vast, totaal, noemer, muts, aantal: t.aantal, betaald: t.betaald_maand, perLid, maanden,
+      saldo: Number(v.startsaldo_betaal) + Number(t.som), reserve: Number(v.startsaldo_reserve) - post("Reservefonds"), werkelijk: (p) => -post(p) };
+  }
+  return { jaar, mjop, reservering, minimum, posten, vast, totaal, noemer, muts, aantal: muts.length, saldo, reserve, maanden, perLid, werkelijk };
 }
 
 function aandachtspunten(c) {
@@ -79,7 +86,7 @@ function aandachtspunten(c) {
   for (const w of S.wisverzoeken) if (w.status === "open" && bestuur()) p.push(["let", `${eK()} ${esc(w.appartement)} vraagt om wissen van persoonsgegevens (zie Leden). Handel dit binnen een maand af.`]);
   const nieuw = S.berichten.filter((b) => b.status === "open").length;
   if (nieuw && bestuur()) p.push(["let", `${nieuw} ${nieuw === 1 ? "bericht" : "berichten"} van leden ${nieuw === 1 ? "wacht" : "wachten"} op antwoord (zie Berichten).`]);
-  if (!S.leden.some((l) => l.email)) p.push(["let", `Nog geen e-mailadressen bij de ${eN()}: eigenaren kunnen dan nog niet inloggen.`]);
+  if (bestuur() && !S.leden.some((l) => l.email)) p.push(["let", `Nog geen e-mailadressen bij de ${eN()}: eigenaren kunnen dan nog niet inloggen.`]);
   if (!p.length) p.push(["ok", "Alles op orde: geen achterstanden, geen onderhoud binnen 2 jaar, vergadering gepland."]);
   return p;
 }
@@ -94,10 +101,24 @@ async function laadVves() {
   S.beheer = beheer.error ? [] : beheer.data.map((r) => r.vve_id);
   if (!S.vve && data.length) await kiesVve(data[0].id);
 }
+// E-mailadressen van leden ziet alleen het bestuur; leden zien de totalen van de VvE, niet de betalingen van buren.
+const LEDEN_KOLOMMEN = "id,vve_id,appartement,breukdeel,naam,user_id,rol";
+async function laadExtra(id) {
+  S.totalen = null;
+  if (bestuur()) {
+    let r = await sb.rpc("leden_emails", { v: id });
+    if (r.error) r = await sb.from("leden").select("id,email").eq("vve_id", id); // database nog zonder leden_emails
+    const mail = new Map((r.data || []).map((x) => [x.id, x.email]));
+    for (const l of S.leden) l.email = mail.get(l.id) || null;
+  } else {
+    const r = await sb.rpc("geld_totalen", { v: id });
+    if (!r.error && r.data && r.data.jaar === S.vve.boekjaar) S.totalen = r.data;
+  }
+}
 async function kiesVve(id) {
   const q = (t) => sb.from(t).select("*").eq("vve_id", id);
   const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken, berichten] = await Promise.all([
-    sb.from("vves").select("*").eq("id", id).single(), q("leden").order("appartement"), q("begroting").order("post"),
+    sb.from("vves").select("*").eq("id", id).single(), sb.from("leden").select(LEDEN_KOLOMMEN).eq("vve_id", id).order("appartement"), q("begroting").order("post"),
     q("mutaties").order("datum", { ascending: false }), q("mjop").order("laatst"), q("vergaderingen").order("datum", { ascending: false }),
     q("stemmingen"), q("akkoorden").order("aangemaakt", { ascending: false }), q("wisverzoeken").order("aangemaakt", { ascending: false }),
     q("berichten").order("aangemaakt", { ascending: false }),
@@ -106,7 +127,7 @@ async function kiesVve(id) {
   S.berichten = berichten.error ? [] : berichten.data; // tabel kan nog ontbreken
   Object.assign(S, { vve: vve.data, leden: leden.data, begroting: begroting.data, mutaties: mutaties.data, mjop: mjop.data, vergaderingen: vergaderingen.data, stemmingen: stemmingen.data, akkoorden: akkoorden.data, wisverzoeken: wisverzoeken.data });
   S.leden.sort((a, b) => a.appartement.localeCompare(b.appartement, "nl", { numeric: true }));
-  await laadStukken();
+  await Promise.all([laadExtra(id), laadStukken()]);
 }
 async function laadStukken() {
   const { data } = await sb.storage.from("stukken").list(S.vve.id, { sortBy: { column: "created_at", order: "desc" } });
@@ -212,10 +233,10 @@ function kop(c) {
 
 function overzicht(c) {
   const open = S.akkoorden.filter((a) => a.status === "open");
-  const betaald = c.perLid.filter((l) => l.dezeMaand >= l.pm - 0.01 && l.pm > 0).length;
+  const betaald = c.betaald ?? c.perLid.filter((l) => l.dezeMaand >= l.pm - 0.01 && l.pm > 0).length;
   const volgende = S.vergaderingen.filter((v) => v.datum >= vandaag()).sort((a, b) => a.datum.localeCompare(b.datum))[0];
   return `<div class="raster">
-    <div class="tegel"><div class="lab">Betaalrekening</div><div class="getal">${eur(c.saldo)}</div><div class="klein">Startsaldo + ${c.muts.length} mutaties in ${c.jaar}</div></div>
+    <div class="tegel"><div class="lab">Betaalrekening</div><div class="getal">${eur(c.saldo)}</div><div class="klein">Startsaldo + ${c.aantal} mutaties in ${c.jaar}</div></div>
     <div class="tegel"><div class="lab">Reservefonds</div><div class="getal">${eur0(c.reserve)}</div><div class="klein">${S.mjop.length ? `Storting ${eur0(c.reservering)} per jaar (MJOP)` : c.minimum ? `Minimum ${eur0(c.minimum)} per jaar (0,5%)` : "Nog geen MJOP"}</div></div>
     <div class="tegel"><div class="lab">Voorschotten deze maand</div><div class="getal">${betaald} van ${S.leden.length}</div><div class="klein">ontvangen volgens de mutaties</div></div>
     <div class="tegel"><div class="lab">Volgende vergadering</div><div class="getal">${volgende ? datumNL(volgende.datum).replace(/ \d{4}$/, "") : "–"}</div><div class="klein">${volgende ? "gepland" : "nog niet gepland"}</div></div>
@@ -324,9 +345,9 @@ function wisverzoekenBestuur() {
 }
 
 function leden() {
-  return `${wisverzoekenBestuur()}<div class="kaart"><h2>${cap(eN())} en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>${eK()}</th><th class="n">Breukdeel</th><th>Naam</th><th>E-mail</th><th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
-  ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(noemer())}</td><td>${esc(l.naam || "")}</td><td>${esc(l.email || "")}</td><td>${l.rol}</td><td>${l.user_id ? "ja" : bestuur() && l.email ? `<button class="klein-knop" data-actie="account-maken" data-id="${l.id}">Account maken</button>` : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
-  ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met "Account maken" krijgt de eigenaar een startwachtwoord dat u persoonlijk doorgeeft. Hij of zij kan dan alles van de VvE inzien, maar niets wijzigen (behalve als rol "bestuur").</p>
+  return `${wisverzoekenBestuur()}<div class="kaart"><h2>${cap(eN())} en eigenaren</h2><div class="tw"><table class="lijst"><tr><th>${eK()}</th><th class="n">Breukdeel</th><th>Naam</th>${bestuur() ? "<th>E-mail</th>" : ""}<th>Rol</th><th>Account</th>${bestuur() ? "<th></th>" : ""}</tr>
+  ${S.leden.map((l) => `<tr><td>${esc(l.appartement)}</td><td class="n">${nl(l.breukdeel)}/${nl(noemer())}</td><td>${esc(l.naam || "")}</td>${bestuur() ? `<td>${esc(l.email || "")}</td>` : ""}<td>${l.rol}</td><td>${l.user_id ? "ja" : bestuur() && l.email ? `<button class="klein-knop" data-actie="account-maken" data-id="${l.id}">Account maken</button>` : "nee"}</td>${bestuur() && l.user_id !== S.sessie.user.id ? `<td><button class="klein-knop" data-actie="weg" data-tabel="leden" data-id="${l.id}">×</button></td>` : bestuur() ? "<td></td>" : ""}</tr>`).join("")}</table></div>
+  ${bestuur() ? `<p style="font-size:.88rem;color:var(--muted)">Zet het e-mailadres van een eigenaar alleen hier als die eigenaar dat goed vindt. Met "Account maken" krijgt de eigenaar een startwachtwoord dat u persoonlijk doorgeeft. Hij of zij kiest bij de eerste keer inloggen een eigen wachtwoord en kan daarna de VvE inzien (niet de betalingen en e-mailadressen van anderen), maar niets wijzigen (behalve met rol "bestuur").</p>
   <p style="font-size:.88rem;color:var(--muted)">Breukdeel: zijn alle ${eN()} gelijk, laat dan overal 1 staan (bij 32 ${eN()} is dat 1/32). Staat in de splitsingsakte bijvoorbeeld 12/1000, vul dan 12 in. Het portaal deelt zelf door het totaal.</p>
   <details class="blok" ${S.leden.length < 3 ? "open" : ""}><summary>Meerdere ${eN()} in één keer toevoegen</summary>
   <form class="formulier rij" data-form="reeks"><label>Van nummer<input name="van" required inputmode="numeric" value="1"></label><label>Tot en met<input name="tot" required inputmode="numeric" placeholder="32"></label><label>Breukdeel per ${e1()}<input name="deel" inputmode="decimal" value="1"></label><button class="btn" type="submit">Toevoegen</button></form>
@@ -488,6 +509,7 @@ function teken() {
   if (!sb) { app.innerHTML = `<div class="inlog kaart"><h1 style="font-size:1.5rem;margin-top:0">VvE-portaal</h1><p>Het portaal wordt nog gekoppeld aan de database. Probeer het later opnieuw.</p></div>`; return; }
   wie.innerHTML = S.sessie ? `<button data-tab="account">Mijn account</button><button data-actie="uitloggen">Uitloggen</button>` : "";
   if (!S.sessie) { app.innerHTML = inlogScherm(); return; }
+  if (startwachtwoord()) { S.tab = "account"; if (!S.fout && !S.melding) S.melding = "Welkom! Kies eerst een eigen wachtwoord. Het startwachtwoord kent het bestuur ook."; }
   if (S.tab === "account") { app.innerHTML = (S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : "") + (S.melding ? `<div class="melding">${esc(S.melding)}</div>` : "") + account(); return; }
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
@@ -598,8 +620,10 @@ app.addEventListener("submit", async (e) => {
     }
     case "wachtwoord": {
       if (d.ww !== d.ww2) return meld("De twee wachtwoorden zijn niet gelijk.", true);
-      const { error } = await sb.auth.updateUser({ password: d.ww });
-      return error ? meld("Opslaan lukte niet: " + error.message, true) : meld("Wachtwoord opgeslagen. Voortaan logt u in met uw e-mailadres en dit wachtwoord.");
+      const { data, error } = await sb.auth.updateUser({ password: d.ww, data: { startwachtwoord: null } });
+      if (error) return meld(/same|different/i.test(error.message) ? "Kies een ander wachtwoord dan het startwachtwoord." : "Opslaan lukte niet: " + error.message, true);
+      if (data?.user) S.sessie.user = data.user;
+      return meld("Wachtwoord opgeslagen. Voortaan logt u in met uw e-mailadres en dit wachtwoord.");
     }
     case "wisverzoek": {
       const l = S.leden.find((x) => x.id === f.dataset.lid);
@@ -762,7 +786,7 @@ document.addEventListener("click", async (e) => {
     const { error } = await sb.rpc("maak_account", { p_lid: l.id, p_wachtwoord: ww });
     if (error) return meld(error.message, true);
     await kiesVve(S.vve.id);
-    return meld(`Account gemaakt voor ${eK().toLowerCase()} ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). De eigenaar kan het daarna wijzigen onder Mijn account.`);
+    return meld(`Account gemaakt voor ${eK().toLowerCase()} ${l.appartement}. Inloggen met ${l.email} en startwachtwoord: ${ww}. Geef dit persoonlijk door (niet per mail). Bij de eerste keer inloggen kiest de eigenaar zelf een nieuw wachtwoord.`);
   }
   if (a === "inlogmodus") { S.inlogModus = t.dataset.modus; S.melding = S.fout = ""; return teken(); }
   if (a === "kies-vve") { S.voorstel = null; S.nieuweVve = false; S.melding = S.fout = ""; await kiesVve(t.dataset.id); return teken(); }
