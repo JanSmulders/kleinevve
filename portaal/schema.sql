@@ -423,7 +423,7 @@ grant execute on function public.vera_mail_antwoord(uuid, text) to service_role;
 
 -- 2026-10-14 vera_mail_stukken_versie (toegepast): vera_mail_in geeft stukken met versie (eTag) en grootte terug, zodat de Worker niet hoeft te downloaden.
 
--- 2026-10-15 portaal_beveiliging: privacy en beveiliging vóór live (herkeuring 14 oktober).
+-- 2026-10-15 portaal_beveiliging (toegepast): privacy en beveiliging vóór live (herkeuring 14 oktober).
 
 -- 1. Betalingen: een lid leest alleen de mutaties van zijn eigen eenheid en algemene uitgaven; het bestuur alles.
 create or replace function public.mijn_eenheden(v uuid) returns setof text
@@ -433,8 +433,8 @@ $$;
 revoke all on function public.mijn_eenheden(uuid) from public, anon;
 grant execute on function public.mijn_eenheden(uuid) to authenticated;
 
-drop policy "leden lezen" on public.mutaties;
-create policy "bestuur leest alles, lid eigen eenheid" on public.mutaties for select to authenticated
+alter policy "leden lezen" on public.mutaties rename to "bestuur leest alles, lid eigen eenheid";
+alter policy "bestuur leest alles, lid eigen eenheid" on public.mutaties
   using (is_bestuur(vve_id) or (is_lid(vve_id) and (
     appartement in (select mijn_eenheden(vve_id))
     or (appartement is null and bedrag < 0 and post <> 'Voorschot'))));
@@ -475,8 +475,7 @@ revoke all on function public.leden_emails(uuid) from public, anon;
 grant execute on function public.leden_emails(uuid) to authenticated;
 
 -- 3. Berichten: een lid kan alleen een gewoon portaalbericht onder zijn eigen eenheid insturen.
-drop policy "lid stuurt bericht" on public.berichten;
-create policy "lid stuurt bericht" on public.berichten for insert to authenticated
+alter policy "lid stuurt bericht" on public.berichten
   with check (user_id = auth.uid() and is_lid(vve_id) and status = 'open' and antwoord = '' and bron = 'portaal'
     and mail_id is null and mail_van is null and vera_antwoord is null and gemeld is null and beantwoord_op is null
     and aangemaakt between now() - interval '1 minute' and now() + interval '1 minute'
