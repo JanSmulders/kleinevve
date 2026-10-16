@@ -1,4 +1,4 @@
-// VvE-portaal (testomgeving). Inloggen per e-mail via Supabase; de database bepaalt met
+// VvE-portaal. Inloggen per e-mail via Supabase; de database bepaalt met
 // row level security wie wat mag zien en wijzigen. Deze code berekent alleen en toont.
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.1/+esm";
 
@@ -7,6 +7,7 @@ const SUPABASE_KEY = "sb_publishable_vP7uUh1wM9WoTkShwNsEWg_8ikU4UlC"; // publis
 
 const VERA_API = "https://kleinevve.jansmulders1966.workers.dev"; // dezelfde Worker als Vera op de website
 const app = document.getElementById("app");
+const TEST = !/^(www\.)?vvekit\.nl$/.test(location.hostname); // op vvekit.nl geen "Testomgeving"-tekst
 const wie = document.getElementById("wie");
 const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
@@ -214,7 +215,7 @@ function inlogScherm() {
   <form class="formulier" data-form="inloggen"><label>E-mailadres<input type="email" name="email" required autocomplete="username"></label>
   <label>Wachtwoord<input type="password" name="ww" required autocomplete="current-password"></label><button class="btn" type="submit">Inloggen</button></form>
   <p><button class="linkknop" data-actie="inlogmodus" data-modus="link">Wachtwoord vergeten of nog geen wachtwoord? Log in met een e-maillink</button></p>`}
-  <p style="font-size:.85rem;color:var(--muted)">Testomgeving. Gemaakt met AI (Claude), een dienst van Lumensquared.</p></div>`;
+  <p style="font-size:.85rem;color:var(--muted)">${TEST ? "Testomgeving. " : ""}Gemaakt met AI (Claude), een dienst van Lumensquared.</p></div>`;
 }
 
 function account() {
@@ -559,7 +560,7 @@ function teken() {
   if (!S.vve) { app.innerHTML = geenVve(S.beheerder); return; }
   const c = cijfers();
   const scherm = { overzicht, geld, onderhoud, vergadering, stukken, berichten, leden, instellingen }[S.tab] || overzicht;
-  app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">Testomgeving. Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt met AI (Claude), een dienst van <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>` + `<button class="vera-knop" type="button" data-actie="naar-vera" aria-label="Vraag Vera over de stukken en het portaal"><img src="/img/vera.svg" alt=""><span>Vraag het Vera <span class="ai-label">AI</span></span></button>`;
+  app.innerHTML = kop(c) + scherm(c) + `<p class="demo-voet">${TEST ? "Testomgeving. " : ""}Wijzigingen kunnen alleen door het bestuur. Geen juridisch of financieel advies; uw splitsingsakte en reglement zijn leidend. Gemaakt met AI (Claude), een dienst van <a href="https://www.lumensquared.nl/">Lumensquared</a>.</p>` + `<button class="vera-knop" type="button" data-actie="naar-vera" aria-label="Vraag Vera over de stukken en het portaal"><img src="/img/vera.svg" alt=""><span>Vraag het Vera <span class="ai-label">AI</span></span></button>`;
 }
 
 // ---------- CSV-import ----------
