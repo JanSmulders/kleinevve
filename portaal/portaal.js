@@ -135,6 +135,32 @@ async function laadStukken() {
   const { data: urls } = lijst.length ? await sb.storage.from("stukken").createSignedUrls(lijst.map((f) => `${S.vve.id}/${f.name}`), 3600) : { data: [] };
   S.stukken = lijst.map((f, i) => ({ naam: f.name, pad: `${S.vve.id}/${f.name}`, grootte: f.metadata?.size || 0, datum: f.created_at, url: urls?.[i]?.signedUrl }));
 }
+// Veiligheidskopie: alle gegevens van de VvE als JSON-bestand (rpc vve_kopie, alleen bestuur).
+async function kopieDownloaden(extra = "") {
+  const { data, error } = await sb.rpc("vve_kopie", { v: S.vve.id });
+  if (error) throw error;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+  a.download = `kopie-${S.vve.naam.normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}-${new Date().toISOString().slice(0, 16).replace(":", "")}${extra}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return data;
+}
+async function kopieTerugzetten(bestand) {
+  let k;
+  try { k = JSON.parse(await bestand.text()); } catch { k = null; }
+  if (k?.soort !== "vvekit-kopie") return meld("Dit bestand is geen veiligheidskopie van het portaal.", true);
+  if (k.vve?.id !== S.vve.id) return meld(`Deze kopie is van ${k.vve?.naam || "een andere VvE"}, niet van ${S.vve.naam}.`, true);
+  const wanneer = new Date(k.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" });
+  if (!confirm(`Alle gegevens van ${S.vve.naam} terugzetten naar de stand van ${wanneer}?\n\nIn de kopie: ${k.leden.length} ${eN()}, ${k.mutaties.length} mutaties, ${k.vergaderingen.length} vergaderingen. Wat daarna is ingevoerd verdwijnt.\n\nHet portaal downloadt eerst een kopie van de huidige stand.`)) return;
+  try { meld("Kopie van de huidige stand maken…"); await kopieDownloaden("-voor-terugzetten"); }
+  catch (err) { return meld("De kopie van de huidige stand lukte niet, dus er is niets teruggezet: " + err.message, true); }
+  meld("Terugzetten…");
+  const { data, error } = await sb.rpc("vve_terugzetten", { v: S.vve.id, k });
+  if (error) return meld("Terugzetten lukte niet. Er is niets veranderd. " + error.message, true);
+  await kiesVve(S.vve.id);
+  meld(`Teruggezet naar de stand van ${wanneer}: ${data.leden} ${eN()}, ${data.mutaties} mutaties en ${data.vergaderingen} vergaderingen.`);
+}
 async function opslaan(belofte, ok, mail = false) {
   const { error } = await belofte;
   if (error) return meld(error.code === "23505" && /contact_email/.test(error.message) ? "Dit mailadres gebruikt een andere VvE al. Kies een ander adres." : "Dat lukte niet: " + error.message, true);
@@ -502,7 +528,12 @@ function instellingen() {
     <td><input name="naam_${l.id}" value="${esc(l.naam || "")}"></td><td><input type="email" name="email_${l.id}" value="${esc(l.email || "")}"></td>
     <td><select name="rol_${l.id}"><option${l.rol === "eigenaar" ? " selected" : ""}>eigenaar</option><option${l.rol === "bestuur" ? " selected" : ""}>bestuur</option></select></td></tr>`).join("")}</table></div>
   <p><button class="btn" type="submit">Wijzigingen opslaan</button></p></form>
-  <p style="font-size:.85rem;color:var(--muted)">Heeft een eigenaar al een account, dan verandert een nieuw e-mailadres hier niet zijn inlognaam. ${cap(eN())} verwijderen kan bij Leden (×).</p></div>`;
+  <p style="font-size:.85rem;color:var(--muted)">Heeft een eigenaar al een account, dan verandert een nieuw e-mailadres hier niet zijn inlognaam. ${cap(eN())} verwijderen kan bij Leden (×).</p></div>
+  <div class="kaart" style="margin-top:20px"><h2>Veiligheidskopie</h2>
+  <p style="margin-top:0;color:var(--muted);font-size:.9rem">Download alle gegevens van ${esc(v.naam)} in één bestand: ${eN()}, geld, begroting, onderhoud, vergaderingen, akkoorden en berichten. Bewaar het op een veilige plek, zoals iCloud Drive of OneDrive. Doe dit bijvoorbeeld elke maand en altijd vóór grote wijzigingen. De PDF-stukken zitten er niet in; bewaar die apart.</p>
+  <p><button class="btn" data-actie="kopie-maken">Kopie downloaden</button></p>
+  <details><summary>Kopie terugzetten</summary><p style="color:var(--muted);font-size:.9rem">Kies een eerder gedownloade kopie. Alle gegevens van ${esc(v.naam)} worden dan vervangen door die uit het bestand; wat daarna is ingevoerd verdwijnt. Het portaal downloadt eerst automatisch een kopie van de huidige stand. Accounts van eigenaren blijven bestaan.</p>
+  <input type="file" accept=".json,application/json" data-actie="kopie-terug"></details></div>`;
 }
 
 function teken() {
@@ -729,6 +760,12 @@ document.addEventListener("click", async (e) => {
     if (!confirm(`Alle ${S.leden.length} ${eN()} krijgen breukdeel 1 (ieder 1/${S.leden.length}). Doorgaan?`)) return;
     return opslaan(sb.from("leden").update({ breukdeel: 1 }).eq("vve_id", S.vve.id), "Alle breukdelen staan op 1.");
   }
+  if (a === "kopie-maken") {
+    meld("Kopie maken…");
+    try { const k = await kopieDownloaden(); meld(`Kopie gedownload: ${k.leden.length} ${eN()}, ${k.mutaties.length} mutaties en ${k.vergaderingen.length} vergaderingen. Bewaar het bestand op een veilige plek.`); }
+    catch (err) { meld("Kopie maken lukte niet: " + err.message, true); }
+    return;
+  }
   if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
   if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
   if (a === "naar-vera") {
@@ -820,6 +857,7 @@ app.addEventListener("change", (e) => {
     });
   }
   if (a === "csv" && t.files[0]) t.files[0].text().then(verwerkCsv);
+  if (a === "kopie-terug" && t.files[0]) { const f = t.files[0]; t.value = ""; kopieTerugzetten(f); }
   if (a === "imp-mee") { S.import[t.dataset.i].mee = t.checked; teken(); }
   if (a === "imp-post") S.import[t.dataset.i].post = t.value;
   if (a === "imp-app") S.import[t.dataset.i].appartement = t.value;
