@@ -38,7 +38,10 @@ const beheert = () => (S.beheer || []).includes(S.vve?.id); // beheerder zonder 
 const bestuur = () => ik()?.rol === "bestuur" || beheert();
 const startwachtwoord = () => !!S.sessie?.user?.user_metadata?.startwachtwoord; // account gemaakt door het bestuur
 
-function meld(tekst, fout = false) { S.melding = fout ? "" : tekst; S.fout = fout ? tekst : ""; teken(); }
+function meld(tekst, fout = false, zichtbaar = fout) {
+  S.melding = fout ? "" : tekst; S.fout = fout ? tekst : ""; teken();
+  if (zichtbaar && tekst) app.querySelector(".melding")?.scrollIntoView({ behavior: "smooth", block: "center" }); // anders mist u een fout onderaan een lange pagina
+}
 
 // ---------- berekeningen ----------
 function cijfers() {
@@ -149,12 +152,13 @@ async function kopieDownloaden(extra = "") {
   return data;
 }
 async function kopieKiezen(bestand) {
+  meld(`Bestand "${bestand.name}" wordt gelezen…`);
   let k;
-  try { k = JSON.parse(await bestand.text()); } catch { k = null; }
+  try { k = JSON.parse(await new Response(bestand).text()); } catch { k = null; }
   if (k?.soort !== "vvekit-kopie") return meld("Dit bestand is geen veiligheidskopie van het portaal.", true);
   if (k.vve?.id !== S.vve.id) return meld(`Deze kopie is van ${k.vve?.naam || "een andere VvE"}, niet van ${S.vve.naam}.`, true);
   S.terugzet = { k, wanneer: new Date(k.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }), veilig: false };
-  meld("Kopie gekozen. Download eerst een kopie van de huidige stand en zet daarna terug.");
+  meld("Kopie gekozen. Download eerst een kopie van de huidige stand en zet daarna terug.", false, true);
 }
 // Downloaden en terugzetten zijn aparte tikken: Safari op iPhone/iPad breekt een verzoek af als er tegelijk een download start.
 async function kopieTerugzetten() {
@@ -166,7 +170,7 @@ async function kopieTerugzetten() {
   if (error) return meld("Terugzetten lukte niet. Er is niets veranderd. " + error.message, true);
   S.terugzet = null;
   await kiesVve(S.vve.id);
-  meld(`Teruggezet naar de stand van ${wanneer}: ${data.leden} ${eN()}, ${data.mutaties} mutaties en ${data.vergaderingen} vergaderingen.`);
+  meld(`Teruggezet naar de stand van ${wanneer}: ${data.leden} ${eN()}, ${data.mutaties} mutaties en ${data.vergaderingen} vergaderingen.`, false, true);
 }
 async function opslaan(belofte, ok, mail = false) {
   const { error } = await belofte;
@@ -543,7 +547,7 @@ function instellingen() {
   ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
   <p>Stap 1: ${S.terugzet.veilig ? "✓ kopie van de huidige stand gedownload." : `<button class="btn ghost" data-actie="kopie-voor-terug">Kopie van de huidige stand downloaden</button>`}</p>
   <p>Stap 2: <button class="btn" data-actie="kopie-nu-terug"${S.terugzet.veilig ? "" : " disabled"}>Nu terugzetten</button> <button class="klein-knop" data-actie="kopie-terug-stop">Annuleren</button></p></div>`
-  : `<input type="file" accept=".json,application/json" data-actie="kopie-terug">`}</details></div>`;
+  : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details></div>`;
 }
 
 function teken() {
@@ -874,7 +878,7 @@ app.addEventListener("change", (e) => {
     });
   }
   if (a === "csv" && t.files[0]) t.files[0].text().then(verwerkCsv);
-  if (a === "kopie-terug" && t.files[0]) { const f = t.files[0]; t.value = ""; kopieKiezen(f); }
+  if (a === "kopie-terug" && t.files[0]) { const f = t.files[0]; t.value = ""; kopieKiezen(f).catch((err) => meld("Het bestand lezen lukte niet: " + err.message, true)); }
   if (a === "imp-mee") { S.import[t.dataset.i].mee = t.checked; teken(); }
   if (a === "imp-post") S.import[t.dataset.i].post = t.value;
   if (a === "imp-app") S.import[t.dataset.i].appartement = t.value;
