@@ -99,7 +99,8 @@ async function laadVves() {
   S.vves = data;
   const beheer = await sb.from("vve_beheer").select("vve_id"); // ontbreekt de tabel nog, dan geen beheer
   S.beheer = beheer.error ? [] : beheer.data.map((r) => r.vve_id);
-  if (!S.vve && data.length) await kiesVve(data[0].id);
+  let vorige = S.voorkeur; try { vorige ||= localStorage.getItem("portaal-vve"); } catch {}
+  if (!S.vve && data.length) await kiesVve((data.find((v) => v.id === vorige) || data[0]).id);
 }
 // E-mailadressen van leden ziet alleen het bestuur; leden zien de totalen van de VvE, niet de betalingen van buren.
 const LEDEN_KOLOMMEN = "id,vve_id,appartement,breukdeel,naam,user_id,rol";
@@ -116,6 +117,7 @@ async function laadExtra(id) {
   }
 }
 async function kiesVve(id) {
+  try { localStorage.setItem("portaal-vve", id); } catch {}
   const q = (t) => sb.from(t).select("*").eq("vve_id", id);
   const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken, berichten] = await Promise.all([
     sb.from("vves").select("*").eq("id", id).single(), sb.from("leden").select(LEDEN_KOLOMMEN).eq("vve_id", id).order("appartement"), q("begroting").order("post"),
@@ -880,7 +882,7 @@ app.addEventListener("change", (e) => {
 
 // ---------- start ----------
 async function start(sessie) {
-  S.sessie = sessie; S.vve = null; S.vves = [];
+  S.voorkeur = S.vve?.id; S.sessie = sessie; S.vve = null; S.vves = [];
   if (sessie) {
     try {
       await laadVves();
@@ -895,6 +897,9 @@ if (sb) {
   if (/access_token|type=magiclink/.test(location.hash)) { S.tab = "account"; S.melding = "U bent ingelogd. Stel hieronder een wachtwoord in, dan heeft u de volgende keer geen e-maillink meer nodig."; }
   sb.auth.onAuthStateChange((event, sessie) => {
     if (event === "SIGNED_OUT") { S.tab = "overzicht"; S.melding = "U bent uitgelogd. Uw gegevens blijven bewaard."; S.fout = ""; }
+    // Safari meldt SIGNED_IN opnieuw als u terugkomt in het tabblad (bijv. na het kiezen van een bestand). Dan niets herladen,
+    // anders verdwijnt wat u op het scherm aan het doen was.
+    if (event === "SIGNED_IN" && S.sessie && sessie?.user?.id === S.sessie.user.id) { S.sessie = sessie; return; }
     if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "SIGNED_OUT") setTimeout(() => start(sessie), 0);
   });
 } else teken();
