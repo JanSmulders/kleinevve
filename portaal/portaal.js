@@ -146,7 +146,7 @@ async function kopieDownloaden(extra = "") {
   if (error) throw error;
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
-  a.download = `kopie-${S.vve.naam.normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}-${new Date().toISOString().slice(0, 16).replace(":", "")}${extra}.json`;
+  a.download = `kopie-${S.vve.naam.normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase()}-${new Date().toLocaleString("sv-SE").slice(0, 16).replace(" ", "-").replace(":", "u")}${extra}.json`; // lokale tijd, bijv. 2026-10-16-23u08
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   return data;
@@ -544,7 +544,7 @@ function instellingen() {
   <p style="margin-top:0;color:var(--muted);font-size:.9rem">Download alle gegevens van ${esc(v.naam)} in één bestand: ${eN()}, geld, begroting, onderhoud, vergaderingen, akkoorden en berichten. Bewaar het op een veilige plek, zoals iCloud Drive of OneDrive. Doe dit bijvoorbeeld elke maand en altijd vóór grote wijzigingen. De PDF-stukken zitten er niet in; bewaar die apart.</p>
   <p><button class="btn" data-actie="kopie-maken">Kopie downloaden</button></p>
   <details${S.terugzet ? " open" : ""}><summary>Kopie terugzetten</summary><p style="color:var(--muted);font-size:.9rem">Kies een eerder gedownloade kopie. Alle gegevens van ${esc(v.naam)} worden dan vervangen door die uit het bestand; wat daarna is ingevoerd verdwijnt. Het portaal downloadt eerst automatisch een kopie van de huidige stand. Accounts van eigenaren blijven bestaan.</p>
-  ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
+  ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> ${esc(S.terugzet.k.vve.naam)}, stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
   <p>Stap 1: ${S.terugzet.veilig ? "✓ kopie van de huidige stand gedownload." : `<button class="btn ghost" data-actie="kopie-voor-terug">Kopie van de huidige stand downloaden</button>`}</p>
   <p>Stap 2: <button class="btn" data-actie="kopie-nu-terug"${S.terugzet.veilig ? "" : " disabled"}>Nu terugzetten</button> <button class="klein-knop" data-actie="kopie-terug-stop">Annuleren</button></p></div>`
   : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details></div>`;
