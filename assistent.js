@@ -13,7 +13,7 @@ if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
 }
 
 (() => {
-  const AVATAR = "img/vera.svg";
+  const AVATAR = "/img/vera.svg";
   const GROET = "Hallo, ik ben Vera, de AI-assistent van vvekit.nl. Ik help met vragen over kleine VvE's: reservefonds, voorschotten, de ledenvergadering en wat een VvE moet regelen. Waar kan ik mee helpen?";
   const SUGGESTIES = [
     "Hoeveel moeten we reserveren?",
@@ -33,7 +33,7 @@ if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
     { w: ["kit", "spreadsheet", "excel", "sheets", "administratie", "kasboek", "jaarrekening", "boekhoud", "begroting"], a: "De **VvE-kit** is één spreadsheet voor de administratie van een kleine VvE: leden en breukdelen, voorschotten, begroting, kasboek, jaarrekening, reservefonds, een eenvoudig MJOP en een notulen-sjabloon. Werkt in Excel, Google Sheets en LibreOffice, met een ingevuld voorbeeld erbij. **Eenmalig €12**, geen abonnement.\n\n[Bekijk de VvE-kit](vve-kit.html) of [koop hem direct](https://vvekit.gumroad.com/l/Vvekit)." },
     { w: ["pakket", "geen tijd", "uitbested", "laten maken", "voor ons", "29", "stukken"], a: "Met het **ALV-pakket** maken wij de stukken voor uw jaarvergadering: uitnodiging en agenda, jaarrekening, begroting met voorschotten per appartement, het reservefonds en een notulen-sjabloon. U stuurt de cijfers naar alv@vvekit.nl en krijgt alles binnen 5 werkdagen terug. **€29 per vergadering**, geen abonnement.\n\n[Meer over het ALV-pakket](alv-pakket.html) of [bestel direct](https://vvekit.gumroad.com/l/egnbn)." },
     { w: ["moet", "verplicht", "wet", "regels", "plicht"], x: 0.5, a: "Een kleine VvE moet: ingeschreven staan bij de KvK, meestal het gebouw verzekeren, minstens één ledenvergadering per jaar houden, een reservefonds opbouwen en een bestuurder met een eenvoudige administratie hebben. De regels staan in Boek 5 van het Burgerlijk Wetboek en in de splitsingsakte van uw gebouw.\n\nAlles op een rij: [Wat moet een VvE?](verplichtingen.html)" },
-    { w: ["ben je", "bent u", "mens", "robot", "wie ben", "echt", " ai"], a: "Ik ben Vera, een AI-assistent, geen mens. vvekit.nl is een experiment met AI (Claude), beheerd door Lumensquared. Ik kan fouten maken en geef geen juridisch advies: uw splitsingsakte en reglement zijn altijd leidend." },
+    { w: ["ben je", "bent u", "mens", "robot", "wie ben", "echt", " ai"], a: "Ik ben Vera, een AI-assistent, geen mens. vvekit.nl is een dienst van Lumensquared en wordt gemaakt met AI (Claude). Ik kan fouten maken en geef geen juridisch advies: uw splitsingsakte en reglement zijn altijd leidend." },
     { w: ["bestel", "gekocht", "download", "gumroad", "factuur", "contact", "mail", "terug"], a: "Voor vragen over een bestelling of iets anders kunt u mailen naar alv@vvekit.nl. Betalen en downloaden gaat via Gumroad; na betaling krijgt u de downloadlink ook per e-mail." },
     { w: ["hallo", "hoi", "goedemorgen", "goedemiddag", "goedenavond", "hey"], a: "Hallo! Stel gerust uw vraag over uw VvE, bijvoorbeeld over het reservefonds, het voorschot of de ledenvergadering." },
     { w: ["dank", "bedankt", "top", "super"], a: "Graag gedaan. Succes met uw VvE!" },
@@ -57,7 +57,7 @@ if (!/^(www\.)?vvekit\.nl$/.test(location.hostname)) {
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, url) => {
         const ok = /^[a-z0-9-]+\.html(#[a-z0-9-]+)?$/i.test(url) || /^https:\/\/vvekit\.gumroad\.com\/l\/[A-Za-z0-9]+$/.test(url) || /^https:\/\/(www\.)?vvekit\.nl\//.test(url);
-        return ok ? `<a href="${url}">${t}</a>` : t;
+        return ok ? `<a href="${/^[a-z0-9-]+\.html/i.test(url) ? "/" + url : url}">${t}</a>` : t;
       })
       .replace(/alv@vvekit\.nl/g, '<a href="mailto:alv@vvekit.nl">alv@vvekit.nl</a>');
   }
