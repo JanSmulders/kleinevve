@@ -146,18 +146,23 @@ async function kopieDownloaden(extra = "") {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   return data;
 }
-async function kopieTerugzetten(bestand) {
+async function kopieKiezen(bestand) {
   let k;
   try { k = JSON.parse(await bestand.text()); } catch { k = null; }
   if (k?.soort !== "vvekit-kopie") return meld("Dit bestand is geen veiligheidskopie van het portaal.", true);
   if (k.vve?.id !== S.vve.id) return meld(`Deze kopie is van ${k.vve?.naam || "een andere VvE"}, niet van ${S.vve.naam}.`, true);
-  const wanneer = new Date(k.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" });
-  if (!confirm(`Alle gegevens van ${S.vve.naam} terugzetten naar de stand van ${wanneer}?\n\nIn de kopie: ${k.leden.length} ${eN()}, ${k.mutaties.length} mutaties, ${k.vergaderingen.length} vergaderingen. Wat daarna is ingevoerd verdwijnt.\n\nHet portaal downloadt eerst een kopie van de huidige stand.`)) return;
-  try { meld("Kopie van de huidige stand maken…"); await kopieDownloaden("-voor-terugzetten"); }
-  catch (err) { return meld("De kopie van de huidige stand lukte niet, dus er is niets teruggezet: " + err.message, true); }
+  S.terugzet = { k, wanneer: new Date(k.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }), veilig: false };
+  meld("Kopie gekozen. Download eerst een kopie van de huidige stand en zet daarna terug.");
+}
+// Downloaden en terugzetten zijn aparte tikken: Safari op iPhone/iPad breekt een verzoek af als er tegelijk een download start.
+async function kopieTerugzetten() {
+  const { k, wanneer } = S.terugzet;
+  if (k.vve.id !== S.vve.id) { S.terugzet = null; return meld(`Deze kopie is van ${k.vve.naam}, niet van ${S.vve.naam}. Kies de kopie opnieuw.`, true); }
+  if (!confirm(`Alle gegevens van ${S.vve.naam} terugzetten naar de stand van ${wanneer}? Wat daarna is ingevoerd verdwijnt.`)) return;
   meld("Terugzetten…");
   const { data, error } = await sb.rpc("vve_terugzetten", { v: S.vve.id, k });
   if (error) return meld("Terugzetten lukte niet. Er is niets veranderd. " + error.message, true);
+  S.terugzet = null;
   await kiesVve(S.vve.id);
   meld(`Teruggezet naar de stand van ${wanneer}: ${data.leden} ${eN()}, ${data.mutaties} mutaties en ${data.vergaderingen} vergaderingen.`);
 }
@@ -532,8 +537,11 @@ function instellingen() {
   <div class="kaart" style="margin-top:20px"><h2>Veiligheidskopie</h2>
   <p style="margin-top:0;color:var(--muted);font-size:.9rem">Download alle gegevens van ${esc(v.naam)} in één bestand: ${eN()}, geld, begroting, onderhoud, vergaderingen, akkoorden en berichten. Bewaar het op een veilige plek, zoals iCloud Drive of OneDrive. Doe dit bijvoorbeeld elke maand en altijd vóór grote wijzigingen. De PDF-stukken zitten er niet in; bewaar die apart.</p>
   <p><button class="btn" data-actie="kopie-maken">Kopie downloaden</button></p>
-  <details><summary>Kopie terugzetten</summary><p style="color:var(--muted);font-size:.9rem">Kies een eerder gedownloade kopie. Alle gegevens van ${esc(v.naam)} worden dan vervangen door die uit het bestand; wat daarna is ingevoerd verdwijnt. Het portaal downloadt eerst automatisch een kopie van de huidige stand. Accounts van eigenaren blijven bestaan.</p>
-  <input type="file" accept=".json,application/json" data-actie="kopie-terug"></details></div>`;
+  <details${S.terugzet ? " open" : ""}><summary>Kopie terugzetten</summary><p style="color:var(--muted);font-size:.9rem">Kies een eerder gedownloade kopie. Alle gegevens van ${esc(v.naam)} worden dan vervangen door die uit het bestand; wat daarna is ingevoerd verdwijnt. Het portaal downloadt eerst automatisch een kopie van de huidige stand. Accounts van eigenaren blijven bestaan.</p>
+  ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
+  <p>Stap 1: ${S.terugzet.veilig ? "✓ kopie van de huidige stand gedownload." : `<button class="btn ghost" data-actie="kopie-voor-terug">Kopie van de huidige stand downloaden</button>`}</p>
+  <p>Stap 2: <button class="btn" data-actie="kopie-nu-terug"${S.terugzet.veilig ? "" : " disabled"}>Nu terugzetten</button> <button class="klein-knop" data-actie="kopie-terug-stop">Annuleren</button></p></div>`
+  : `<input type="file" accept=".json,application/json" data-actie="kopie-terug">`}</details></div>`;
 }
 
 function teken() {
@@ -766,6 +774,13 @@ document.addEventListener("click", async (e) => {
     catch (err) { meld("Kopie maken lukte niet: " + err.message, true); }
     return;
   }
+  if (a === "kopie-voor-terug") {
+    try { await kopieDownloaden("-voor-terugzetten"); S.terugzet.veilig = true; meld("Kopie van de huidige stand gedownload. U kunt nu terugzetten."); }
+    catch (err) { meld("Kopie maken lukte niet: " + err.message, true); }
+    return;
+  }
+  if (a === "kopie-nu-terug") return kopieTerugzetten();
+  if (a === "kopie-terug-stop") { S.terugzet = null; return meld(""); }
   if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
   if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
   if (a === "naar-vera") {
@@ -857,7 +872,7 @@ app.addEventListener("change", (e) => {
     });
   }
   if (a === "csv" && t.files[0]) t.files[0].text().then(verwerkCsv);
-  if (a === "kopie-terug" && t.files[0]) { const f = t.files[0]; t.value = ""; kopieTerugzetten(f); }
+  if (a === "kopie-terug" && t.files[0]) { const f = t.files[0]; t.value = ""; kopieKiezen(f); }
   if (a === "imp-mee") { S.import[t.dataset.i].mee = t.checked; teken(); }
   if (a === "imp-post") S.import[t.dataset.i].post = t.value;
   if (a === "imp-app") S.import[t.dataset.i].appartement = t.value;
