@@ -121,6 +121,7 @@ async function laadExtra(id) {
   }
 }
 async function kiesVve(id) {
+  S.autoKopieen = null;
   try { localStorage.setItem("portaal-vve", id); } catch {}
   const q = (t) => sb.from(t).select("*").eq("vve_id", id);
   const [vve, leden, begroting, mutaties, mjop, vergaderingen, stemmingen, akkoorden, wisverzoeken, berichten] = await Promise.all([
@@ -548,7 +549,10 @@ function instellingen() {
   ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> ${esc(S.terugzet.k.vve.naam)}, stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
   <p>Stap 1: ${S.terugzet.veilig ? "✓ kopie van de huidige stand gedownload." : `<button class="btn ghost" data-actie="kopie-voor-terug">Kopie van de huidige stand downloaden</button>`}</p>
   <p>Stap 2: <button class="btn" data-actie="kopie-nu-terug"${S.terugzet.veilig ? "" : " disabled"}>Nu terugzetten</button> <button class="klein-knop" data-actie="kopie-terug-stop">Annuleren</button></p></div>`
-  : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details></div>
+  : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details>
+  ${S.beheerder ? `<h3 style="margin-bottom:4px">Weekkopieën (alleen Lumensquared)</h3><p style="margin-top:0;color:var(--muted);font-size:.9rem">Elke zondagnacht maakt het portaal zelf een kopie; de laatste 8 blijven bewaard. Het bestuur ziet ze niet. Wie na een kopie op eigen verzoek is gewist, komt bij terugzetten niet terug.</p>
+  ${S.autoKopieen ? (S.autoKopieen.length ? `<ul>${S.autoKopieen.map((a) => `<li>${esc(new Date(a.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }))} <button class="klein-knop" data-actie="auto-kies" data-id="${a.id}">Kies deze</button></li>`).join("")}</ul>` : `<p>Er is nog geen weekkopie.</p>`)
+  : `<p><button class="btn ghost" data-actie="auto-lijst">Weekkopieën tonen</button></p>`}` : ""}</div>
   ${S.beheerder ? `<div class="kaart" style="margin-top:20px"><h2>VvE verwijderen</h2><details${S.verwijder === v.id ? " open" : ""}><summary>${esc(v.naam)} verwijderen (bijvoorbeeld na opzegging)</summary>
   <p style="color:var(--muted);font-size:.9rem">Alles van ${esc(v.naam)} verdwijnt definitief: ${eN()}, geld, begroting, onderhoud, vergaderingen, akkoorden, berichten en alle PDF-stukken. Accounts van eigenaren die alleen bij deze VvE horen worden ook verwijderd. Dit kan niet ongedaan worden gemaakt. Wil de VvE haar gegevens meenemen, download dan eerst hierboven een veiligheidskopie en stuur die naar het bestuur.</p>
   <form class="formulier" data-form="vve-verwijderen"><label>Typ ter controle de naam: ${esc(v.naam)}<input name="naam" required autocomplete="off"></label>
@@ -806,6 +810,17 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (a === "kopie-nu-terug") return kopieTerugzetten();
+  if (a === "auto-lijst") {
+    const { data, error } = await sb.rpc("auto_kopieen_lijst", { v: S.vve.id });
+    if (error) return meld("Weekkopieën ophalen lukte niet: " + error.message, true);
+    S.autoKopieen = data; return teken();
+  }
+  if (a === "auto-kies") {
+    const { data: k, error } = await sb.rpc("auto_kopie_ophalen", { p_id: t.dataset.id });
+    if (error || k?.vve?.id !== S.vve.id) return meld("Weekkopie ophalen lukte niet: " + (error?.message || "andere VvE"), true);
+    S.terugzet = { k, wanneer: new Date(k.gemaakt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }), veilig: false };
+    return meld("Weekkopie gekozen. Download eerst een kopie van de huidige stand en zet daarna terug.", false, true);
+  }
   if (a === "kopie-terug-stop") { S.terugzet = null; return meld(""); }
   if (a === "nieuwe-vve-open") { S.nieuweVve = true; S.eigenEenheid = false; return teken(); }
   if (a === "nieuwe-vve-dicht") { S.nieuweVve = false; return teken(); }
