@@ -714,7 +714,8 @@ app.addEventListener("submit", async (e) => {
     }
     case "vve-verwijderen": {
       const naam = S.vve.naam; S.verwijder = vve_id; // blok blijft open bij een melding
-      if (d.naam.trim() !== naam) return meld(`Typ de naam precies zoals hij er staat: ${naam}`, true);
+      const gelijk = (x) => x.trim().replace(/\s+/g, " ").toLowerCase(); // spaties en hoofdletters tellen niet mee
+      if (gelijk(d.naam) !== gelijk(naam)) return meld(`Typ de naam zoals hij er staat: ${naam.trim()}`, true);
       if (!confirm(`${naam} en alle gegevens definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
       meld("VvE wordt verwijderd…", false, true);
       const lijst = await sb.storage.from("stukken").list(vve_id, { limit: 1000 });
@@ -783,7 +784,7 @@ app.addEventListener("submit", async (e) => {
         const { error } = await sb.from("leden").delete().in("id", weg.map((l) => l.id));
         if (error) return meld("Verwijderen lukte niet: " + error.message, true);
       }
-      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam, boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim().toLowerCase() || null }).eq("id", vve_id), "Instellingen opgeslagen.", (d.mail || "").trim().toLowerCase() !== (S.vve.contact_email || ""));
+      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam.trim(), boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim().toLowerCase() || null }).eq("id", vve_id), "Instellingen opgeslagen.", (d.mail || "").trim().toLowerCase() !== (S.vve.contact_email || ""));
     }
   }
 });
