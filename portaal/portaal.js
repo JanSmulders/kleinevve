@@ -254,7 +254,7 @@ function nieuweVveForm() {
 }
 function geenVve(beheerder) {
   return `<div class="inlog kaart"><h1 style="font-size:1.5rem;margin-top:0">Welkom</h1>
-  ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}
+  ${S.fout ? `<div class="melding fout">${esc(S.fout)}</div>` : ""}${S.melding ? `<div class="melding">${esc(S.melding)}</div>` : ""}
   ${beheerder ? `<p>U heeft nog geen VvE. Maak er een aan.</p>${nieuweVveForm()}`
   : `<p>Uw e-mailadres (${esc(S.sessie.user.email)}) staat nog bij geen enkele VvE. Vraag het bestuur van uw VvE om uw e-mailadres bij uw ${e1()} te zetten, en log daarna opnieuw in.</p>`}</div>`;
 }
@@ -548,7 +548,11 @@ function instellingen() {
   ${S.terugzet ? `<div class="melding"><p style="margin-top:0"><strong>Gekozen kopie:</strong> ${esc(S.terugzet.k.vve.naam)}, stand van ${esc(S.terugzet.wanneer)}, met ${S.terugzet.k.leden.length} ${eN()}, ${S.terugzet.k.mutaties.length} mutaties en ${S.terugzet.k.vergaderingen.length} vergaderingen.</p>
   <p>Stap 1: ${S.terugzet.veilig ? "✓ kopie van de huidige stand gedownload." : `<button class="btn ghost" data-actie="kopie-voor-terug">Kopie van de huidige stand downloaden</button>`}</p>
   <p>Stap 2: <button class="btn" data-actie="kopie-nu-terug"${S.terugzet.veilig ? "" : " disabled"}>Nu terugzetten</button> <button class="klein-knop" data-actie="kopie-terug-stop">Annuleren</button></p></div>`
-  : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details></div>`;
+  : `<label>Kies het kopiebestand (meestal in Bestanden, map Downloads)<input type="file" data-actie="kopie-terug"></label>`}</details></div>
+  ${S.beheerder ? `<div class="kaart" style="margin-top:20px"><h2>VvE verwijderen</h2><details${S.verwijder === v.id ? " open" : ""}><summary>${esc(v.naam)} verwijderen (bijvoorbeeld na opzegging)</summary>
+  <p style="color:var(--muted);font-size:.9rem">Alles van ${esc(v.naam)} verdwijnt definitief: ${eN()}, geld, begroting, onderhoud, vergaderingen, akkoorden, berichten en alle PDF-stukken. Accounts van eigenaren die alleen bij deze VvE horen worden ook verwijderd. Dit kan niet ongedaan worden gemaakt. Wil de VvE haar gegevens meenemen, download dan eerst hierboven een veiligheidskopie en stuur die naar het bestuur.</p>
+  <form class="formulier" data-form="vve-verwijderen"><label>Typ ter controle de naam: ${esc(v.naam)}<input name="naam" required autocomplete="off"></label>
+  <button class="btn" type="submit" style="background:#b42318;border-color:#b42318">VvE definitief verwijderen</button></form></details></div>` : ""}`;
 }
 
 function teken() {
@@ -703,6 +707,21 @@ app.addEventListener("submit", async (e) => {
       S.nieuweVve = false; S.eigenEenheid = false;
       await laadVves(); await kiesVve(id); S.tab = "instellingen";
       return meld(`VvE "${d.naam}" aangemaakt. Kies hier de soort en het aantal eenheden; daarna kunt u bij Stukken de akte uploaden en Vera de gegevens laten invullen.`);
+    }
+    case "vve-verwijderen": {
+      const naam = S.vve.naam; S.verwijder = vve_id; // blok blijft open bij een melding
+      if (d.naam.trim() !== naam) return meld(`Typ de naam precies zoals hij er staat: ${naam}`, true);
+      if (!confirm(`${naam} en alle gegevens definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+      meld("VvE wordt verwijderd…", false, true);
+      const lijst = await sb.storage.from("stukken").list(vve_id, { limit: 1000 });
+      const paden = (lijst.data || []).filter((f) => f.name).map((f) => `${vve_id}/${f.name}`);
+      if (paden.length) { const { error } = await sb.storage.from("stukken").remove(paden); if (error) return meld("Stukken verwijderen lukte niet: " + error.message, true); }
+      const { data: r, error } = await sb.rpc("verwijder_vve", { v: vve_id, p_naam: naam });
+      if (error) return meld(error.message, true);
+      const mail = (S.vve.contact_email || "").toLowerCase();
+      S.vve = null; S.voorkeur = null; S.tab = "overzicht"; try { localStorage.removeItem("portaal-vve"); } catch {}
+      await laadVves();
+      return meld(`${r.naam} is verwijderd, met ${r.leden} ${eN()}, ${paden.length} ${paden.length === 1 ? "stuk" : "stukken"} en ${r.accounts} ${r.accounts === 1 ? "account" : "accounts"}.${mail.endsWith("@vvekit.nl") ? ` Het mailadres ${mail} stuurt nog door; verwijder dat in ImprovMX.` : ""}`, false, true);
     }
     case "lid": return opslaan(sb.from("leden").insert({ vve_id, appartement: d.app.trim(), breukdeel: deel(d.deel), naam: d.naam || null, email: d.email?.trim() || null, rol: d.rol }), `${cap(e1())} toegevoegd.`, d.rol === "bestuur");
     case "appartementen": {
