@@ -826,3 +826,6 @@ grant execute on function public.vve_terugzetten(uuid, jsonb) to authenticated;
 
 select cron.schedule('vvekit-weekkopie', '0 2 * * 0', 'select public.maak_auto_kopieen()');
 select public.maak_auto_kopieen() as eerste_kopieen;
+
+-- Migratie vve_kvk_nummer: KvK-nummer van de VvE (8 cijfers), in te vullen bij Instellingen.
+alter table public.vves add column if not exists kvk_nummer text check (kvk_nummer is null or kvk_nummer ~ '^[0-9]{8}$');
