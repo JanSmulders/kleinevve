@@ -527,6 +527,7 @@ function instellingen() {
   <label>Soort<select name="eenheid">${Object.entries(EENHEDEN).map(([k, w]) => `<option value="${k}"${k === (v.eenheid || "appartement") ? " selected" : ""}>${cap(w[1])}</option>`).join("")}</select></label>
   <label>Aantal ${eN()}<input name="aantal" required inputmode="numeric" value="${S.leden.length}"></label>
   <label>Boekjaar<input name="jaar" required inputmode="numeric" value="${v.boekjaar}"></label>
+  <label>KvK-nummer<input name="kvk" inputmode="numeric" maxlength="8" pattern="[0-9]{8}" title="8 cijfers" value="${esc(v.kvk_nummer || "")}"></label>
   <label>Herbouwwaarde<input name="hbw" inputmode="decimal" value="${v.herbouwwaarde ?? ""}"></label>
   <label>Saldo betaalrekening 1 januari<input name="sb" inputmode="decimal" value="${v.startsaldo_betaal}"></label>
   <label>Saldo reservefonds 1 januari<input name="sr" inputmode="decimal" value="${v.startsaldo_reserve}"></label>
@@ -769,6 +770,8 @@ app.addEventListener("submit", async (e) => {
     case "akkoord": return opslaan(sb.from("akkoorden").insert({ vve_id, titel: d.titel, uitleg: d.uitleg || "" }), "Punt toegevoegd.");
     case "instellingen": {
       const aantal = parseInt(d.aantal);
+      const kvk = (d.kvk || "").replace(/\D/g, "");
+      if (kvk && kvk.length !== 8) return meld("Een KvK-nummer heeft 8 cijfers.", true);
       if (!(aantal >= 1 && aantal <= 500)) return meld("Vul een aantal tussen 1 en 500 in.", true);
       const verschil = aantal - S.leden.length;
       if (verschil > 0) {
@@ -784,7 +787,7 @@ app.addEventListener("submit", async (e) => {
         const { error } = await sb.from("leden").delete().in("id", weg.map((l) => l.id));
         if (error) return meld("Verwijderen lukte niet: " + error.message, true);
       }
-      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam.trim(), boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim().toLowerCase() || null }).eq("id", vve_id), "Instellingen opgeslagen.", (d.mail || "").trim().toLowerCase() !== (S.vve.contact_email || ""));
+      return opslaan(sb.from("vves").update({ eenheid: d.eenheid, naam: d.naam.trim(), boekjaar: parseInt(d.jaar), herbouwwaarde: d.hbw ? getal(d.hbw) : null, startsaldo_betaal: getal(d.sb) || 0, startsaldo_reserve: getal(d.sr) || 0, contact_email: (d.mail || "").trim().toLowerCase() || null, kvk_nummer: kvk || null }).eq("id", vve_id), "Instellingen opgeslagen.", (d.mail || "").trim().toLowerCase() !== (S.vve.contact_email || ""));
     }
   }
 });
