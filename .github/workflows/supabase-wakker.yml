@@ -1,0 +1,30 @@
+# Houdt het gratis Supabase-project van het portaal (vvekit, nevkccqxidibpthxowyh) actief.
+# Supabase pauzeert een gratis project na ~7 dagen zonder API-verkeer. SQL via de
+# Management API/MCP telt daar kennelijk niet voor, echte REST-aanvragen wel.
+# Dit doet 1x per dag een alleen-lezen aanvraag met de publieke sleutel (die staat ook in portaal.js).
+# Kost niets (GitHub Actions is gratis voor dit gebruik). Handmatig draaien: tab Actions > Run workflow.
+name: Supabase wakker houden
+
+on:
+  schedule:
+    - cron: "17 5 * * *"   # dagelijks 05:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: REST en Auth aanroepen
+        env:
+          URL: https://nevkccqxidibpthxowyh.supabase.co
+          KEY: sb_publishable_vP7uUh1wM9WoTkShwNsEWg_8ikU4UlC
+        run: |
+          set -e
+          rest=$(curl -sS -m 30 -o /dev/null -w "%{http_code}" "$URL/rest/v1/vves?select=id&limit=1" -H "apikey: $KEY")
+          auth=$(curl -sS -m 30 -o /dev/null -w "%{http_code}" "$URL/auth/v1/health" -H "apikey: $KEY")
+          echo "REST: $rest  Auth: $auth"
+          # Faalt de job, dan stuurt GitHub een mail: dan staat het project waarschijnlijk op pauze.
+          [ "$rest" = "200" ] && [ "$auth" = "200" ]
